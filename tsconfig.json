@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "types": ["node"]
+  },
+  "include": ["receipts/**/*.ts", "ai/**/*.ts", "storage/**/*.ts", "server/**/*.ts", "src/**/*.test.js"]
+}
