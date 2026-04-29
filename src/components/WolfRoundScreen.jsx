@@ -46,7 +46,9 @@ export function WolfRoundScreen({
   roundResult,
 }) {
   const [flow, setFlow] = useState(
-    /** @type {'selectFirstWolf' | 'wolfPath' | 'pickPartner' | 'confirmBlind' | 'holeResult'} */ ("selectFirstWolf"),
+    /** @type {'selectFirstWolf' | 'wolfPath' | 'pickPartner' | 'confirmBlind' | 'holeResult'} */ (
+      wolfOrder?.length ? "wolfPath" : "selectFirstWolf"
+    ),
   );
   const [selectedFirstWolfId, setSelectedFirstWolfId] = useState(() => gamePlayers[0]?.id ?? "p-0");
   /** @type {'normal' | 'lone' | 'blind' | null} */
@@ -80,6 +82,12 @@ export function WolfRoundScreen({
       setWinningSide(null);
     }
   }, [currentHole, wolfOrder]);
+
+  useEffect(() => {
+    if (wolfOrder?.length && flow === "selectFirstWolf") {
+      setFlow("wolfPath");
+    }
+  }, [wolfOrder, flow]);
 
   useEffect(() => {
     return () => {

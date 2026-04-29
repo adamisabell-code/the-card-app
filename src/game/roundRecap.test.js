@@ -51,6 +51,39 @@ describe("roundRecap", () => {
     expect(groupRecap.stamp).toBe("GROUP RECAP");
   });
 
+  it("maps winner/neutral/loser modes at round end", () => {
+    const holes = [hole({ holeNumber: 1, holeMode: "normal", winningSide: "wolf_side", wolfPlayerId: "p-0" })];
+    const { finalStandings, worstBeat, groupRecap } = buildRecapShareCards(holes, players, {});
+    expect(finalStandings.portraitDisplayMode).toBe("winner");
+    expect(worstBeat.portraitDisplayMode).toBe("loser");
+    expect(groupRecap.portraitDisplayMode).toBe("neutral");
+  });
+
+  it("does not trigger network/AI work when building end-of-round receipts", () => {
+    const prevFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error("Should not fetch during recap");
+    };
+    try {
+      const holes = [hole({ holeNumber: 1, holeMode: "blind", partnerPlayerId: null, winningSide: "wolf_side" })];
+      const cards = buildRecapShareCards(holes, players, {});
+      expect(cards.finalStandings.stamp).toBe("FINAL STANDINGS");
+      expect(calls).toBe(0);
+    } finally {
+      globalThis.fetch = prevFetch;
+    }
+  });
+
+  it("still renders recap when avatar bundles are missing", () => {
+    const holes = [hole({ holeNumber: 1, holeMode: "normal", winningSide: "opponent_side" })];
+    const cards = buildRecapShareCards(holes, players, { "p-0": null });
+    expect(cards.finalStandings).toBeTruthy();
+    expect(cards.worstBeat).toBeTruthy();
+    expect(cards.groupRecap).toBeTruthy();
+  });
+
   it("buildHoleQuickConfirm is one short line for speed", () => {
     const q = buildHoleQuickConfirm(
       hole({ holeMode: "blind", partnerPlayerId: null, winningSide: "opponent_side" }),

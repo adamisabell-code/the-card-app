@@ -1,18 +1,23 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import html2canvas from "html2canvas";
 import { ReceiptCard } from "./ReceiptCard.jsx";
-import { ReceiptThemePicker } from "./ReceiptThemePicker.jsx";
 import { initialsFromName } from "../portrait/types.js";
-import { DEFAULT_RECEIPT_THEME_ID, normalizeReceiptThemeId } from "../receiptThemes.js";
 
 /**
  * @param {{
  *   recap: { finalStandings: object, bestMoment: object, worstBeat: object, groupRecap: object } | null
  *   onDone: () => void
+ *   themeId?: string
  * }} props
  */
-export function RoundRecapScreen({ recap, onDone }) {
+export function RoundRecapScreen({ recap, onDone, themeId = "default-dark" }) {
   if (!recap) return null;
-  const [receiptThemeId, setReceiptThemeId] = useState(DEFAULT_RECEIPT_THEME_ID);
+  const [shareStatus, setShareStatus] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const [isSavingImage, setIsSavingImage] = useState(false);
+  const [capturePulse, setCapturePulse] = useState(false);
+  const scrollRef = useRef(null);
+  const pulseTimerRef = useRef(null);
 
   const { finalStandings, bestMoment, worstBeat, groupRecap } = recap;
 
@@ -29,25 +34,114 @@ export function RoundRecapScreen({ recap, onDone }) {
         layout="default"
         initials={initialsFromName(props.playerName)}
         aiFlavorText={props.aiFlavorText ?? null}
-        themeId={receiptThemeId}
+        themeId={themeId}
       />
     </div>
   );
+
+  const prepareCaptureMoment = useCallback(async () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    setCapturePulse(true);
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+    pulseTimerRef.current = setTimeout(() => {
+      setCapturePulse(false);
+      pulseTimerRef.current = null;
+    }, 420);
+    await new Promise((resolve) => setTimeout(resolve, 180));
+  }, []);
+
+  const handleShare = useCallback(async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    setShareStatus("");
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        navigator.vibrate(10);
+      }
+      await prepareCaptureMoment();
+      const shareUrl = window.location.href;
+      const title = "Tee Party Results";
+      const text = "Receipts don’t lie. Look what just happened.";
+      if (navigator.share) {
+        await navigator.share({ title, text, url: shareUrl });
+      } else {
+        const msg = `${text}: ${shareUrl}`;
+        await navigator.clipboard.writeText(msg);
+        setShareStatus("Copied — paste in your group chat");
+      }
+    } catch {
+      setShareStatus("Share canceled");
+    } finally {
+      setIsSharing(false);
+    }
+  }, [isSharing, prepareCaptureMoment]);
+
+  const handleSaveImage = useCallback(async () => {
+    if (isSavingImage) return;
+    if (!scrollRef.current) return;
+    setIsSavingImage(true);
+    setShareStatus("");
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        navigator.vibrate(10);
+      }
+      await prepareCaptureMoment();
+      const canvas = await html2canvas(scrollRef.current, {
+        backgroundColor: "#050808",
+        scale: Math.min(2, window.devicePixelRatio || 1.5),
+        useCORS: true,
+      });
+      const data = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = data;
+      a.download = "tee-party-receipt.png";
+      a.click();
+      setShareStatus("Saved — ready to post");
+    } catch {
+      setShareStatus("Could not save image");
+    } finally {
+      setIsSavingImage(false);
+    }
+  }, [isSavingImage, prepareCaptureMoment]);
 
   return (
     <div className="round-recap round-recap--in-shell">
       <header className="round-recap__head">
         <h1 className="round-recap__title">End of round</h1>
         <p className="round-recap__lede">Final receipts — standings, best beat, worst beat, group stamp.</p>
-        <ReceiptThemePicker value={receiptThemeId} onChange={(themeId) => setReceiptThemeId(normalizeReceiptThemeId(themeId))} />
       </header>
-      <div className="round-recap__scroll" role="region" aria-label="Recap cards">
+      <div
+        ref={scrollRef}
+        className={`round-recap__scroll${capturePulse ? " round-recap__scroll--capture" : ""}`}
+        role="region"
+        aria-label="Recap cards"
+      >
         {block("1 · Final standings", finalStandings)}
         {block("2 · Best moment", bestMoment)}
         {block("3 · Worst beat", worstBeat)}
         {block("4 · Group recap", groupRecap)}
       </div>
       <div className="round-recap__footer">
+        <p className="round-recap__microcopy">If it’s not here, it didn’t happen.</p>
+        <button
+          type="button"
+          className="btn btn--primary round-recap__share-primary"
+          onClick={handleShare}
+          disabled={isSharing}
+        >
+          {isSharing ? "Opening share..." : "Send this to the group chat"}
+        </button>
+        <button
+          type="button"
+          className="btn btn--outline round-recap__save-image"
+          onClick={handleSaveImage}
+          disabled={isSavingImage}
+        >
+          {isSavingImage ? "Saving..." : "Save to Photos"}
+        </button>
+        {shareStatus ? <p className="round-recap__share-status">{shareStatus}</p> : null}
         <button type="button" className="btn btn--primary round-recap__done" onClick={onDone}>
           Done
         </button>

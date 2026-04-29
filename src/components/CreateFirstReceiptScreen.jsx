@@ -94,6 +94,7 @@ export function CreateFirstReceiptScreen({ onBack, onPortraitSaved, onCommitPres
         headerTitle="Your photo for the Card"
         heroDisplayName={playerName.trim() || "Player"}
         initialBundle={portraitBundle}
+        playerId="p-0"
       />
     );
   }

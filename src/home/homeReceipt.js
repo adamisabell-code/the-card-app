@@ -5,6 +5,7 @@
 
 import { buildRoundResult, suggestPressBadgeHints } from "../game/roundResult.js";
 import { computeReceiptPresentation } from "../../receipts/receiptEngine.ts";
+import { buildStakeCallouts, computeRoundPayout, formatStakeAmount } from "../game/stakes.js";
 
 const HAS_RECEIPT_KEY = "the-card-has-receipt-v1";
 const SNAPSHOT_KEY = "the-card-last-receipt-snapshot-v1";
@@ -85,25 +86,33 @@ export function loadLastReceiptSnapshot() {
 /**
  * @param {import('../game/types.js').GamePlayer[]} gamePlayers
  * @param {import('../game/types.js').HoleRecord[]} holeRecords
+ * @param {import('../game/stakes.js').StakesConfig} [stakesConfig]
  * @returns {LastReceiptSnapshot}
  */
-export function buildLastReceiptSnapshot(gamePlayers, holeRecords) {
+export function buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig) {
   const p0 = gamePlayers.find((p) => p.id === "p-0") ?? gamePlayers[0];
   const playerName = p0?.name?.trim() || "Player 1";
 
-  const rr = buildRoundResult(gamePlayers, holeRecords);
+  const stakes = stakesConfig ?? {
+    preset: 2,
+    customValue: "",
+    loneWolf2x: true,
+    blindWolf3x: true,
+    hideDollarAmounts: false,
+  };
+  const moneyByPlayerId = computeRoundPayout(holeRecords, gamePlayers, stakes);
+  const rr = buildRoundResult(gamePlayers, holeRecords, { moneyByPlayerId });
   const pres = computeReceiptPresentation(rr, p0.id);
   const hints = suggestPressBadgeHints(rr);
   const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
   let badges = hints.slice(0, 3).map((h) => titleCase(h.label));
+  badges = badges.concat(buildStakeCallouts(holeRecords, gamePlayers, stakes));
   if (badges.length < 2) {
     badges = ["Press Merchant", "Wolf Killer"];
   }
 
-  const presses = rr.pressStats.totalPresses;
-  const holes = rr.holeCount;
-  const n = Math.min(999, Math.max(12, presses * 14 + holes * 6));
-  const amountLabel = `+$${n}`;
+  const amount = moneyByPlayerId[p0.id] ?? 0;
+  const amountLabel = stakes.hideDollarAmounts ? "+$—" : formatStakeAmount(amount);
 
   return {
     playerName,

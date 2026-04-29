@@ -16,6 +16,10 @@ import {
   loadPersistedPortraitProfile,
   savePersistedPortraitProfile,
 } from "../portrait/userPortraitProfile.js";
+import {
+  loadPlayerAvatarProfileState,
+  upsertPlayerAvatarProfileState,
+} from "../portrait/avatarProfileState.js";
 
 const STEPS = ["validate", "preprocess", "stylize"];
 
@@ -27,6 +31,7 @@ const STEPS = ["validate", "preprocess", "stylize"];
  *   heroDisplayName?: string
  *   returnAfterSave?: boolean — if false, does not call onBack after a successful save (e.g. embedded in another flow)
  *   headerTitle?: string — override main heading (e.g. preseason flow)
+ *   playerId?: string
  * }} props
  */
 export function PortraitSetupFlow({
@@ -36,6 +41,7 @@ export function PortraitSetupFlow({
   heroDisplayName = "Player",
   returnAfterSave = true,
   headerTitle = "Receipt portrait",
+  playerId = "p-0",
 }) {
   const [phase, setPhase] = useState(initialBundle ? "preview" : "pick");
   const [bundle, setBundle] = useState(initialBundle);
@@ -55,6 +61,7 @@ export function PortraitSetupFlow({
     setError(null);
     setPhase("process");
     setProcessStep(0);
+    upsertPlayerAvatarProfileState(playerId, "pending");
     try {
       const persisted = await loadPersistedPortraitProfile();
       if (persisted && fingerprintForFile(file) === persisted.sourceFingerprint) {
@@ -66,6 +73,7 @@ export function PortraitSetupFlow({
         setBundle(merged);
         setPreviewMode(preferredToneChoice);
         setPhase("preview");
+        upsertPlayerAvatarProfileState(playerId, "ready");
         return;
       }
 
@@ -83,11 +91,13 @@ export function PortraitSetupFlow({
       setBundle(merged);
       setPreviewMode(preferredToneChoice);
       setPhase("preview");
+      upsertPlayerAvatarProfileState(playerId, "ready");
     } catch (e) {
+      upsertPlayerAvatarProfileState(playerId, "failed");
       setError(e instanceof Error ? e.message : "Something went wrong.");
       setPhase("pick");
     }
-  }, [bundle, preferredToneChoice, heroDisplayName]);
+  }, [bundle, preferredToneChoice, heroDisplayName, playerId]);
 
   const handleUsePlaceholders = async () => {
     setError(null);
@@ -129,6 +139,7 @@ export function PortraitSetupFlow({
     setError(null);
     setPhase("process");
     setProcessStep(2);
+    upsertPlayerAvatarProfileState(playerId, "pending");
     try {
       await new Promise((r) => setTimeout(r, 200));
       let next;
@@ -150,7 +161,9 @@ export function PortraitSetupFlow({
       await savePersistedPortraitProfile(record);
       setBundle(next);
       setPhase("preview");
+      upsertPlayerAvatarProfileState(playerId, "ready");
     } catch (e) {
+      upsertPlayerAvatarProfileState(playerId, "failed");
       setError(e instanceof Error ? e.message : "Regenerate failed.");
       setPhase("preview");
     }
@@ -163,6 +176,7 @@ export function PortraitSetupFlow({
       const toSave = { ...bundle, preferredMode: previewMode };
       const record = await buildPersistedRecordFromBundle(toSave, lastSourceFileRef.current, existing);
       await savePersistedPortraitProfile(record);
+      upsertPlayerAvatarProfileState(playerId, "ready");
       onSave(toSave);
       if (returnAfterSave) onBack();
     } catch (e) {
@@ -172,6 +186,7 @@ export function PortraitSetupFlow({
 
   const canRegenerate =
     bundle && !bundle.isPlaceholder && bundle.regenerateCount < MAX_PORTRAIT_REGENERATES;
+  const avatarProfileState = loadPlayerAvatarProfileState(playerId);
 
   return (
     <div className="portrait-setup">
@@ -221,7 +236,7 @@ export function PortraitSetupFlow({
 
         {phase === "process" && (
           <section className="portrait-setup__section portrait-setup__section--center">
-            <p className="portrait-setup__status">Preparing your portrait…</p>
+            <p className="portrait-setup__status">Preparing your receipt look…</p>
             <ol className="portrait-setup__steps">
               {STEPS.map((label, i) => (
                 <li key={label} className={`portrait-setup__step${i <= processStep ? " is-done" : ""}`}>
@@ -271,6 +286,10 @@ export function PortraitSetupFlow({
               {bundle?.isPlaceholder
                 ? "Placeholder portraits — swap to a photo anytime."
                 : `Regenerations left: ${MAX_PORTRAIT_REGENERATES - bundle.regenerateCount}`}
+            </p>
+            <p className="portrait-setup__meta">Locked in. This is how you'll show up on receipts.</p>
+            <p className="portrait-setup__meta">
+              Avatar status: <strong>{avatarProfileState?.avatarStatus ?? "pending"}</strong>
             </p>
             <div className="portrait-setup__actions">
               <button type="button" className="btn btn--outline" onClick={handleRegenerate} disabled={!canRegenerate}>

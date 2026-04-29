@@ -36,12 +36,16 @@ import { appendCompletedRound, loadCompletedRounds } from "./home/completedRound
 import { fetchReceiptFlavorIfEnabled } from "./home/receiptFlavorClient.js";
 import { usePathname, APP_PATHNAME_CHANGED } from "./hooks/usePathname.js";
 import { isFirstReceiptPath } from "./routes/firstReceiptPath.js";
+import { isLeagueInvitePath } from "./routes/leagueInvitePath.js";
+import { isSettingsPath } from "./routes/settingsPath.js";
 import { matchRoundSharePath } from "./roundShare/matchRoundSharePath.js";
 import { buildRoundShareSnapshot } from "./roundShare/roundSharePayload.js";
 import { putPublicRoundSnapshot } from "./roundShare/publicRoundApi.js";
 import { RoundShareModal } from "./roundShare/RoundShareModal.jsx";
 import { RoundShareViewerScreen } from "./roundShare/RoundShareViewerScreen.jsx";
+import { LeagueInviteScreen } from "./components/LeagueInviteScreen.jsx";
 import { DEFAULT_RECEIPT_THEME_ID, normalizeReceiptThemeId } from "./receiptThemes.js";
+import { loadPlayerAvatarProfileState } from "./portrait/avatarProfileState.js";
 
 function NavIcon({ name }) {
   const common = { width: 22, height: 22, fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" };
@@ -72,6 +76,13 @@ function NavIcon({ name }) {
           <path d="M5 21V8h5v13M14 21V4h5v17" />
         </svg>
       );
+    case "settings":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.1" />
+          <path d="M19 12a7 7 0 0 0-.08-1l2.02-1.57-1.9-3.3-2.46 1a7.1 7.1 0 0 0-1.72-1l-.36-2.62h-3.8l-.36 2.62a7.1 7.1 0 0 0-1.72 1l-2.46-1-1.9 3.3L5.08 11a7 7 0 0 0 0 2l-2.02 1.57 1.9 3.3 2.46-1a7.1 7.1 0 0 0 1.72 1l.36 2.62h3.8l.36-2.62a7.1 7.1 0 0 0 1.72-1l2.46 1 1.9-3.3L18.92 13c.05-.33.08-.66.08-1Z" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -82,6 +93,7 @@ const NAV_TABS = [
   { id: "rounds", label: "Rounds", icon: "rounds" },
   { id: "receipt", label: "Receipt", icon: "receipt" },
   { id: "leaderboard", label: "Leaderboard", icon: "leaderboard" },
+  { id: "settings", label: "Settings", icon: "settings" },
 ];
 
 /** Placeholder league rows — not tied to round scoring or backend. */
@@ -110,7 +122,51 @@ const initialPlayers = () => ["", "", "", ""];
 const NEARBY_COURSES = ["Lions Municipal", "Morris Williams", "Avery Ranch"];
 
 const TEE_OPTIONS = ["Tips", "Blue", "White", "Gold", "Forward"];
-const RECEIPT_THEME_STORAGE_KEY = "the-card-receipt-theme-v1";
+const THEME_STORAGE_KEY = "theme";
+const LEGACY_RECEIPT_THEME_STORAGE_KEY = "the-card-receipt-theme-v1";
+const STAKES_CONFIG_KEY = "the-card-stakes-config-v1";
+const INSTALL_PROMPT_SHOWN_KEY = "installPromptShown";
+
+function loadStakesConfig() {
+  try {
+    const raw = localStorage.getItem(STAKES_CONFIG_KEY);
+    if (!raw) throw new Error("missing");
+    const parsed = JSON.parse(raw);
+    return {
+      preset: parsed.preset === "custom" || parsed.preset === 1 || parsed.preset === 2 || parsed.preset === 5 ? parsed.preset : 2,
+      customValue: typeof parsed.customValue === "string" ? parsed.customValue : "",
+      loneWolf2x: parsed.loneWolf2x !== false,
+      blindWolf3x: parsed.blindWolf3x !== false,
+      hideDollarAmounts: parsed.hideDollarAmounts === true,
+    };
+  } catch {
+    return {
+      preset: 2,
+      customValue: "",
+      loneWolf2x: true,
+      blindWolf3x: true,
+      hideDollarAmounts: false,
+    };
+  }
+}
+
+function saveStakesConfig(config) {
+  try {
+    localStorage.setItem(STAKES_CONFIG_KEY, JSON.stringify(config));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadThemePreference() {
+  try {
+    const primary = localStorage.getItem(THEME_STORAGE_KEY);
+    if (primary) return normalizeReceiptThemeId(primary);
+    return normalizeReceiptThemeId(localStorage.getItem(LEGACY_RECEIPT_THEME_STORAGE_KEY));
+  } catch {
+    return DEFAULT_RECEIPT_THEME_ID;
+  }
+}
 
 function newRoundShareId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -204,26 +260,49 @@ function roundSummaryForList(round) {
   };
 }
 
+function BottomNav({ activeTab, onTabChange }) {
+  return (
+    <nav className="tab-bar" aria-label="Primary">
+      <ul className="tab-bar__list">
+        {NAV_TABS.map((item) => {
+          const isActive = activeTab === item.id;
+          return (
+            <li key={item.id} className="tab-bar__item">
+              <button
+                type="button"
+                className={`tab-bar__btn${isActive ? " tab-bar__btn--active" : ""}`}
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => onTabChange(item.id)}
+              >
+                <span className="tab-bar__icon">
+                  <NavIcon name={item.icon} />
+                </span>
+                <span className="tab-bar__label">{item.label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
 function HomeScreen({
   activeTab,
   onTabChange,
   completedRounds,
   onViewRoundRecap,
   onNewRound,
+  onRunItBack,
+  onNewGroup,
+  onShareReceipt,
   onPortraitSetup,
   receiptPortrait,
   receiptPortraitDisplayMode,
   currentUserDisplayName,
   lastReceiptSnapshot,
+  receiptThemeId,
 }) {
-  const [receiptThemeId, setReceiptThemeId] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem(RECEIPT_THEME_STORAGE_KEY);
-      return normalizeReceiptThemeId(saved);
-    } catch {
-      return DEFAULT_RECEIPT_THEME_ID;
-    }
-  });
   const isReturning = hasReturningUserReceipt();
   const snap = isReturning ? lastReceiptSnapshot ?? loadLastReceiptSnapshot() : null;
   const receipt =
@@ -250,26 +329,97 @@ function HomeScreen({
     }
   }, [activeTab]);
 
-  const handleReceiptThemeChange = useCallback((nextThemeId) => {
-    const normalized = normalizeReceiptThemeId(nextThemeId);
-    setReceiptThemeId(normalized);
-    try {
-      window.localStorage.setItem(RECEIPT_THEME_STORAGE_KEY, normalized);
-    } catch {
-      /* ignore storage failures */
-    }
-  }, []);
-
-  const [addToHomeModalOpen, setAddToHomeModalOpen] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [inviteQrDataUrl, setInviteQrDataUrl] = useState("");
+  const [inviteStatus, setInviteStatus] = useState("");
+  const inviteUrl = `${window.location.origin}/league-invite`;
+  const [deferredInstallPromptEvent, setDeferredInstallPromptEvent] = useState(null);
+  const [showReceiptInstallPrompt, setShowReceiptInstallPrompt] = useState(false);
+  const [showInstallInstructions, setShowInstallInstructions] = useState(false);
 
   useEffect(() => {
-    if (!addToHomeModalOpen) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") setAddToHomeModalOpen(false);
+    const onBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setDeferredInstallPromptEvent(event);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [addToHomeModalOpen]);
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+  }, []);
+
+  useEffect(() => {
+    if (!(activeTab === "receipt" && isReturning && snap?.playerName)) return;
+    let alreadyShown = false;
+    try {
+      alreadyShown = localStorage.getItem(INSTALL_PROMPT_SHOWN_KEY) === "true";
+    } catch {
+      alreadyShown = false;
+    }
+    if (alreadyShown) return;
+    setShowReceiptInstallPrompt(true);
+    try {
+      localStorage.setItem(INSTALL_PROMPT_SHOWN_KEY, "true");
+    } catch {
+      /* ignore */
+    }
+  }, [activeTab, isReturning, snap?.playerName]);
+
+  useEffect(() => {
+    if (!inviteModalOpen) return;
+    let dead = false;
+    void import("qrcode")
+      .then((QR) => QR.toDataURL(inviteUrl, { width: 220, margin: 1, errorCorrectionLevel: "M" }))
+      .then((url) => {
+        if (!dead) setInviteQrDataUrl(url);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [inviteModalOpen, inviteUrl]);
+
+  useEffect(() => {
+    if (!inviteStatus) return;
+    const timer = window.setTimeout(() => setInviteStatus(""), 1800);
+    return () => window.clearTimeout(timer);
+  }, [inviteStatus]);
+
+  const handleCopyInviteLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setInviteStatus("Copied");
+    } catch {
+      setInviteStatus("Could not copy");
+    }
+  }, [inviteUrl]);
+
+  const handleShareInviteLink = useCallback(async () => {
+    const text = "I just joined The Card to prove I’m him. Join and try to prove me wrong.";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Join The Card", text, url: inviteUrl });
+        setInviteStatus("Shared");
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${inviteUrl}`);
+      setInviteStatus("Copied");
+    } catch {
+      setInviteStatus("Share canceled");
+    }
+  }, [inviteUrl]);
+
+  const handleInstallFromReceipt = useCallback(async () => {
+    if (deferredInstallPromptEvent) {
+      try {
+        await deferredInstallPromptEvent.prompt();
+        await deferredInstallPromptEvent.userChoice;
+      } catch {
+        /* ignore */
+      } finally {
+        setDeferredInstallPromptEvent(null);
+      }
+      return;
+    }
+    setShowInstallInstructions(true);
+  }, [deferredInstallPromptEvent]);
 
   return (
     <>
@@ -305,15 +455,19 @@ function HomeScreen({
 
           {activeTab === "home" && (
             <main className={`home-receipt-main${!isReturning ? " home-receipt-main--new" : ""}`}>
-              <section className="home-add-to-home" aria-label="Install to home screen">
-                <div className="home-add-to-home__card">
-                  <p className="home-add-to-home__support">Save it like an app. No App Store needed.</p>
+              <section className="home-league-invite" aria-label="League invite">
+                <div className="home-league-invite__card">
+                  <p className="home-league-invite__copy">
+                    Invite your group.
+                    <br />
+                    Let them prove they belong.
+                  </p>
                   <button
                     type="button"
-                    className="btn home-add-to-home__btn"
-                    onClick={() => setAddToHomeModalOpen(true)}
+                    className="btn home-league-invite__btn"
+                    onClick={() => setInviteModalOpen(true)}
                   >
-                    Add The Card to Home Screen
+                    Show Invite QR
                   </button>
                 </div>
               </section>
@@ -331,16 +485,20 @@ function HomeScreen({
                   themeId={receiptThemeId}
                 />
               </div>
-              <ReceiptThemePicker value={receiptThemeId} onChange={handleReceiptThemeChange} />
-              {!isReturning && (
-                <p className="home-receipt-tagline">
-                  Earn your receipt. <span className="home-receipt-tagline__accent">Prove it.</span>
-                </p>
-              )}
               <div className="home-receipt-cta">
-                <button type="button" className="btn btn--primary btn--home-cta" onClick={onNewRound}>
-                  {isReturning ? "Run It Back" : "Play Your First Round"}
+                <button type="button" className="btn btn--primary btn--home-cta" onClick={isReturning ? onRunItBack : onNewRound}>
+                  {isReturning ? "Run It Back" : "Start First Round"}
                 </button>
+                {isReturning ? (
+                  <>
+                    <button type="button" className="btn btn--outline btn--home-cta-secondary" onClick={onNewGroup}>
+                      New Group
+                    </button>
+                    <button type="button" className="btn btn--outline btn--home-cta-secondary" onClick={onShareReceipt}>
+                      Share Receipt
+                    </button>
+                  </>
+                ) : null}
               </div>
             </main>
           )}
@@ -414,8 +572,20 @@ function HomeScreen({
                   />
                 </div>
               )}
-              {isReturning && snap?.playerName ? (
-                <ReceiptThemePicker value={receiptThemeId} onChange={handleReceiptThemeChange} />
+              {showReceiptInstallPrompt && isReturning && snap?.playerName ? (
+                <section className="receipt-install-prompt" aria-label="Install prompt">
+                  <p className="receipt-install-prompt__copy">
+                    Save The Card to your home screen so your group is always one tap away.
+                  </p>
+                  <button type="button" className="btn btn--outline btn--compact receipt-install-prompt__btn" onClick={handleInstallFromReceipt}>
+                    Add to Home Screen
+                  </button>
+                  {showInstallInstructions ? (
+                    <p className="receipt-install-prompt__hint">
+                      Tap the share icon and select &quot;Add to Home Screen&quot;.
+                    </p>
+                  ) : null}
+                </section>
               ) : null}
             </main>
           )}
@@ -494,77 +664,87 @@ function HomeScreen({
           )}
         </div>
 
-        {activeTab === "home" && addToHomeModalOpen ? (
+        {activeTab === "home" && inviteModalOpen ? (
           <div
             className="home-add-to-home-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="home-add-to-home-modal-title"
+            aria-labelledby="home-league-invite-modal-title"
           >
             <button
               type="button"
               className="home-add-to-home-modal__scrim"
-              aria-label="Close instructions"
-              onClick={() => setAddToHomeModalOpen(false)}
+              aria-label="Close invite QR"
+              onClick={() => setInviteModalOpen(false)}
             />
-            <div className="home-add-to-home-modal__panel" role="document">
+            <div className="home-add-to-home-modal__panel home-league-invite-modal" role="document">
               <button
                 type="button"
                 className="home-add-to-home-modal__close"
-                onClick={() => setAddToHomeModalOpen(false)}
+                onClick={() => setInviteModalOpen(false)}
                 aria-label="Close"
               >
                 <span aria-hidden="true">×</span>
               </button>
-              <h2 id="home-add-to-home-modal-title" className="home-add-to-home-modal__title">
-                Save The Card like an app
+              <h2 id="home-league-invite-modal-title" className="home-add-to-home-modal__title">
+                Invite your group
               </h2>
-              <div className="home-add-to-home-modal__sections">
-                <section className="home-add-to-home-modal__block" aria-label="iPhone instructions">
-                  <h3 className="home-add-to-home-modal__platform">iPhone (Safari)</h3>
-                  <ol className="home-add-to-home-modal__steps">
-                    <li>Tap the Share icon in Safari</li>
-                    <li>Scroll and tap “Add to Home Screen”</li>
-                    <li>Tap “Add”</li>
-                  </ol>
-                </section>
-                <section className="home-add-to-home-modal__block" aria-label="Android instructions">
-                  <h3 className="home-add-to-home-modal__platform">Android (Chrome)</h3>
-                  <ol className="home-add-to-home-modal__steps">
-                    <li>Tap the three-dot menu in Chrome</li>
-                    <li>Tap “Add to Home screen”</li>
-                    <li>Tap “Install” or “Add”</li>
-                  </ol>
-                </section>
+              <p className="home-league-invite-modal__lede">Scan to join The Card league invite flow.</p>
+              {inviteQrDataUrl ? (
+                <img className="home-league-invite-modal__qr" src={inviteQrDataUrl} alt="League invite QR code" decoding="async" />
+              ) : (
+                <p className="home-league-invite-modal__lede">Generating QR...</p>
+              )}
+              <div className="home-league-invite-modal__actions">
+                <button type="button" className="btn btn--outline btn--compact" onClick={handleCopyInviteLink}>
+                  Copy invite link
+                </button>
+                <button type="button" className="btn btn--outline btn--compact" onClick={handleShareInviteLink}>
+                  Share invite link
+                </button>
               </div>
+              {inviteStatus ? <p className="league-invite__status">{inviteStatus}</p> : null}
             </div>
           </div>
         ) : null}
       </div>
 
-      <nav className="tab-bar" aria-label="Primary">
-        <ul className="tab-bar__list">
-          {NAV_TABS.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <li key={item.id} className="tab-bar__item">
-                <button
-                  type="button"
-                  className={`tab-bar__btn${isActive ? " tab-bar__btn--active" : ""}`}
-                  aria-current={isActive ? "page" : undefined}
-                  onClick={() => onTabChange(item.id)}
-                >
-                  <span className="tab-bar__icon">
-                    <NavIcon name={item.icon} />
-                  </span>
-                  <span className="tab-bar__label">{item.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+      <BottomNav activeTab={activeTab} onTabChange={onTabChange} />
     </>
+  );
+}
+
+function SettingsScreen({ themeId, onThemeChange, onBack, onTabChange }) {
+  return (
+    <div className="start-round settings-screen">
+      <header className="start-round__header">
+        <button type="button" className="start-round__back" onClick={onBack} aria-label="Back to home">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <h1 className="start-round__heading">Settings</h1>
+      </header>
+      <div className="start-round__scroll">
+        <section className="card settings-screen__section">
+          <h2 className="card__title card__title--sm">Appearance</h2>
+          <ReceiptThemePicker value={themeId} onChange={onThemeChange} />
+        </section>
+        <section className="card settings-screen__section settings-screen__section--placeholder">
+          <h2 className="card__title card__title--sm">Profile</h2>
+          <p className="card__lede">Coming soon.</p>
+        </section>
+        <section className="card settings-screen__section settings-screen__section--placeholder">
+          <h2 className="card__title card__title--sm">Notifications</h2>
+          <p className="card__lede">Coming soon.</p>
+        </section>
+        <section className="card settings-screen__section settings-screen__section--placeholder">
+          <h2 className="card__title card__title--sm">Help / Support</h2>
+          <p className="card__lede">Coming soon.</p>
+        </section>
+      </div>
+      <BottomNav activeTab="settings" onTabChange={onTabChange} />
+    </div>
   );
 }
 
@@ -573,18 +753,23 @@ function StartRoundScreen({
   onPortraitSetup,
   players,
   setPlayers,
-  onStartGame,
+  onContinueToStakes,
   courseName,
   setCourseName,
   showNearbyCourses,
   setShowNearbyCourses,
   selectedTee,
   setSelectedTee,
+  startVariant,
   portraitByPlayerId,
   resolveDisplayName,
+  avatarStatus,
 }) {
   const courseAckTimerRef = useRef(null);
   const [coursePickAck, setCoursePickAck] = useState(false);
+  const [showPlayerEditor, setShowPlayerEditor] = useState(startVariant !== "runback");
+  const [showCourseEditor, setShowCourseEditor] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState("");
 
   useEffect(() => {
     return () => {
@@ -593,6 +778,23 @@ function StartRoundScreen({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (startVariant !== "new-group") {
+      setQrDataUrl("");
+      return;
+    }
+    let dead = false;
+    const joinUrl = `${window.location.origin}${window.location.pathname}`;
+    void import("qrcode").then((QR) => {
+      return QR.toDataURL(joinUrl, { width: 192, margin: 1, errorCorrectionLevel: "M" });
+    }).then((url) => {
+      if (!dead) setQrDataUrl(url);
+    });
+    return () => {
+      dead = true;
+    };
+  }, [startVariant]);
 
   const setPlayerAt = (index, value) => {
     setPlayers((prev) => {
@@ -632,8 +834,32 @@ function StartRoundScreen({
           Portrait
         </button>
       </header>
+      <p className="start-round__avatar-status" role="status">
+        {avatarStatus === "ready"
+          ? "Receipt look ready."
+          : "Preparing your receipt look... round can still start with fallback initials."}
+      </p>
+      {startVariant === "new-group" && (
+        <section className="start-round__quick card">
+          <h2 className="card__title card__title--sm">Add your group</h2>
+          <p className="card__lede">Scan to join quickly. Name required, photo optional.</p>
+          {qrDataUrl ? <img className="start-round__qr" src={qrDataUrl} alt="Join round QR code" decoding="async" /> : null}
+        </section>
+      )}
 
       <div className="start-round__scroll">
+        {startVariant === "runback" ? (
+          <section className="start-round__quick card">
+            <h2 className="card__title card__title--sm">Run It Back</h2>
+            <p className="card__lede">Previous group loaded. Settle it.</p>
+            <div className="start-round__quick-actions">
+              <button type="button" className="btn btn--outline btn--compact" onClick={() => setShowPlayerEditor((v) => !v)}>
+                Edit Players
+              </button>
+            </div>
+          </section>
+        ) : null}
+        {(showPlayerEditor || startVariant !== "runback") && (
         <section className="start-round__section">
           <h2 className="start-round__section-title">Players</h2>
           <div className="start-round__fields">
@@ -660,42 +886,50 @@ function StartRoundScreen({
             ))}
           </div>
         </section>
+        )}
 
         <section className="start-round__section">
-          <h2 className="start-round__section-title">Course</h2>
-          <label className={`field field--solo course-field-wrap${coursePickAck ? " course-field-wrap--ack" : ""}`}>
-            <span className="visually-hidden">Course name</span>
-            <input
-              className="field__input field__input--course"
-              type="text"
-              value={courseName}
-              onChange={(e) => setCourseName(e.target.value)}
-              placeholder="Enter course name"
-              autoComplete="off"
-            />
-            <span className="course-field-wrap__check" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-            </span>
-          </label>
-          <button type="button" className="btn btn--outline btn--compact" onClick={handleUseLocation}>
-            Use Current Location
+          <button type="button" className="btn btn--outline btn--compact" onClick={() => setShowCourseEditor((v) => !v)}>
+            {showCourseEditor ? "Hide Course" : "Add Course"}
           </button>
-          {showNearbyCourses && (
-            <div className="nearby-card">
-              <h3 className="nearby-card__title">Nearby Courses</h3>
-              <ul className="nearby-card__list">
-                {NEARBY_COURSES.map((name) => (
-                  <li key={name}>
-                    <button type="button" className="nearby-course" onClick={() => handlePickNearbyCourse(name)}>
-                      {name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {showCourseEditor ? (
+            <>
+              <h2 className="start-round__section-title">Course (optional)</h2>
+              <label className={`field field--solo course-field-wrap${coursePickAck ? " course-field-wrap--ack" : ""}`}>
+                <span className="visually-hidden">Course name</span>
+                <input
+                  className="field__input field__input--course"
+                  type="text"
+                  value={courseName}
+                  onChange={(e) => setCourseName(e.target.value)}
+                  placeholder="Casual Round"
+                  autoComplete="off"
+                />
+                <span className="course-field-wrap__check" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </span>
+              </label>
+              <button type="button" className="btn btn--outline btn--compact" onClick={handleUseLocation}>
+                Use Current Location
+              </button>
+              {showNearbyCourses && (
+                <div className="nearby-card">
+                  <h3 className="nearby-card__title">Nearby Courses</h3>
+                  <ul className="nearby-card__list">
+                    {NEARBY_COURSES.map((name) => (
+                      <li key={name}>
+                        <button type="button" className="nearby-course" onClick={() => handlePickNearbyCourse(name)}>
+                          {name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : null}
         </section>
 
         <section className="start-round__section">
@@ -729,8 +963,95 @@ function StartRoundScreen({
       </div>
 
       <div className="start-round__footer">
-        <button type="button" className="btn btn--primary" onClick={onStartGame}>
-          Start Game
+        <p className="start-round__quick-copy">{avatarStatus === "ready" ? "Settle it." : "Receipts loading..."}</p>
+        <button type="button" className="btn btn--primary" onClick={onContinueToStakes}>
+          Continue to Stakes Setup
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound }) {
+  const baseStake = stakesConfig.preset === "custom"
+    ? Number.parseFloat(stakesConfig.customValue || "") || 2
+    : stakesConfig.preset;
+  const toggle = (key) => setStakesConfig((prev) => ({ ...prev, [key]: !prev[key] }));
+  return (
+    <div className="start-round">
+      <header className="start-round__header">
+        <button type="button" className="start-round__back" onClick={onBack} aria-label="Back to start round">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </button>
+        <h1 className="start-round__heading">Stakes Setup</h1>
+      </header>
+      <div className="start-round__scroll">
+        <section className="start-round__section card">
+          <h2 className="card__title card__title--sm">Base stake per hole</h2>
+          <div className="stakes-setup__presets" role="radiogroup" aria-label="Base stake per hole">
+            {[1, 2, 5].map((v) => {
+              const active = stakesConfig.preset === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`tee-chip${active ? " tee-chip--active" : ""}`}
+                  onClick={() => setStakesConfig((prev) => ({ ...prev, preset: v }))}
+                >
+                  ${v}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={stakesConfig.preset === "custom"}
+              className={`tee-chip${stakesConfig.preset === "custom" ? " tee-chip--active" : ""}`}
+              onClick={() => setStakesConfig((prev) => ({ ...prev, preset: "custom" }))}
+            >
+              Custom
+            </button>
+          </div>
+          {stakesConfig.preset === "custom" ? (
+            <label className="field field--solo stakes-setup__custom">
+              <span className="field__label">Custom base</span>
+              <input
+                className="field__input"
+                type="number"
+                min="0.25"
+                step="0.25"
+                value={stakesConfig.customValue}
+                onChange={(e) => setStakesConfig((prev) => ({ ...prev, customValue: e.target.value }))}
+                placeholder="2"
+              />
+            </label>
+          ) : null}
+          <p className="card__lede">Current base: ${Number.isInteger(baseStake) ? baseStake : baseStake.toFixed(2)}</p>
+        </section>
+
+        <section className="start-round__section card">
+          <h2 className="card__title card__title--sm">Payout rules</h2>
+          <button type="button" className="stakes-setup__toggle" onClick={() => toggle("loneWolf2x")} aria-pressed={stakesConfig.loneWolf2x}>
+            <span>Lone Wolf = 2x multiplier</span>
+            <strong>{stakesConfig.loneWolf2x ? "ON" : "OFF"}</strong>
+          </button>
+          <button type="button" className="stakes-setup__toggle" onClick={() => toggle("blindWolf3x")} aria-pressed={stakesConfig.blindWolf3x}>
+            <span>Blind Wolf = 3x multiplier</span>
+            <strong>{stakesConfig.blindWolf3x ? "ON" : "OFF"}</strong>
+          </button>
+          <button type="button" className="stakes-setup__toggle" onClick={() => toggle("hideDollarAmounts")} aria-pressed={stakesConfig.hideDollarAmounts}>
+            <span>Hide dollar amounts on receipt</span>
+            <strong>{stakesConfig.hideDollarAmounts ? "ON" : "OFF"}</strong>
+          </button>
+        </section>
+      </div>
+      <div className="start-round__footer">
+        <button type="button" className="btn btn--primary" onClick={onStartRound}>
+          Start Round
         </button>
       </div>
     </div>
@@ -744,6 +1065,8 @@ function TheCardApp() {
   const [courseName, setCourseName] = useState("");
   const [showNearbyCourses, setShowNearbyCourses] = useState(false);
   const [selectedTee, setSelectedTee] = useState("White");
+  const [startVariant, setStartVariant] = useState("standard");
+  const [stakesConfig, setStakesConfig] = useState(() => loadStakesConfig());
   const [currentHole, setCurrentHole] = useState(1);
   const [receiptPortrait, setReceiptPortrait] = useState(null);
   /** Which cached portrait variant the receipt hero uses (from last round or persisted snapshot). */
@@ -770,6 +1093,8 @@ function TheCardApp() {
   const [completedRounds, setCompletedRounds] = useState(() => loadCompletedRounds());
   const [roundShareId, setRoundShareId] = useState(/** @type {string | null} */ (null));
   const [roundShareModalOpen, setRoundShareModalOpen] = useState(false);
+  const [avatarStatus, setAvatarStatus] = useState("pending");
+  const [receiptThemeId, setReceiptThemeId] = useState(() => loadThemePreference());
   const pathname = usePathname();
   const lowWolfPickCommittedHoleRef = useRef(/** @type {number} */ (-1));
   const holeRecordsForLowWolfRef = useRef(/** @type {import('./game/types.js').HoleRecord[]} */ ([]));
@@ -930,6 +1255,16 @@ function TheCardApp() {
   }, []);
 
   useEffect(() => {
+    const refreshStatus = () => {
+      const profile = loadPlayerAvatarProfileState("p-0");
+      setAvatarStatus(profile?.avatarStatus ?? "pending");
+    };
+    refreshStatus();
+    window.addEventListener("focus", refreshStatus);
+    return () => window.removeEventListener("focus", refreshStatus);
+  }, []);
+
+  useEffect(() => {
     const startCrossfade = window.setTimeout(() => setSplashPhase("xfade"), SPLASH_1_XFADE_AT);
     const endSplash1 = window.setTimeout(() => setSplashPhase("s2"), SPLASH_1_TOTAL_MS);
     const toApp = window.setTimeout(
@@ -946,6 +1281,7 @@ function TheCardApp() {
   const handlePreseasonPortraitSaved = useCallback((bundle) => {
     setReceiptPortrait(bundle);
     setReceiptPortraitDisplayMode(bundle.preferredMode ?? "neutral");
+    setAvatarStatus("ready");
   }, []);
 
   const handlePreseasonCommit = useCallback((data) => {
@@ -964,11 +1300,45 @@ function TheCardApp() {
   };
 
   const goStartRound = () => {
-    setCourseName("");
+    setCourseName("Casual Round");
     setShowNearbyCourses(false);
     setSelectedTee("White");
+    setStartVariant("standard");
     setScreen("startRound");
   };
+
+  const goStakesSetup = useCallback(() => {
+    setScreen("stakesSetup");
+  }, []);
+
+  const goRunItBack = useCallback(() => {
+    const last = loadCompletedRounds()[0];
+    if (last?.players?.length) {
+      const seeded = ["", "", "", ""];
+      for (const p of last.players) {
+        if (typeof p.slotIndex === "number" && p.slotIndex >= 0 && p.slotIndex < 4) {
+          seeded[p.slotIndex] = p.name ?? "";
+        }
+      }
+      setPlayers(seeded);
+    }
+    setCourseName("Casual Round");
+    setShowNearbyCourses(false);
+    setSelectedTee("White");
+    setStakesConfig(loadStakesConfig());
+    setStartVariant("runback");
+    setScreen("startRound");
+  }, []);
+
+  const goNewGroup = useCallback(() => {
+    setPlayers(initialPlayers());
+    setCourseName("Casual Round");
+    setShowNearbyCourses(false);
+    setSelectedTee("White");
+    setStakesConfig(loadStakesConfig());
+    setStartVariant("new-group");
+    setScreen("startRound");
+  }, []);
 
   const clearFirstReceiptPath = useCallback(() => {
     if (isFirstReceiptPath(pathname)) {
@@ -985,7 +1355,7 @@ function TheCardApp() {
 
   const goStartRoundFromPreseason = useCallback(() => {
     clearFirstReceiptPath();
-    setCourseName("");
+    setCourseName("Casual Round");
     setShowNearbyCourses(false);
     setSelectedTee("White");
     setScreen("startRound");
@@ -997,12 +1367,41 @@ function TheCardApp() {
     if (isFirstReceiptPath(pathname)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- URL is external source; maps path → first-receipt step
       setScreen("createFirstReceipt");
+      return;
+    }
+    if (isSettingsPath(pathname)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- URL is external source; maps path → settings step
+      setScreen("settings");
     }
   }, [splashPhase, pathname]);
+
+  const handleThemeChange = useCallback((nextThemeId) => {
+    const normalized = normalizeReceiptThemeId(nextThemeId);
+    setReceiptThemeId(normalized);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, normalized);
+      localStorage.setItem(LEGACY_RECEIPT_THEME_STORAGE_KEY, normalized);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const goPortraitSetup = () => {
     setScreen("portraitSetup");
   };
+
+  const handlePrimaryTabChange = useCallback((tabId) => {
+    if (tabId === "settings") {
+      setScreen("settings");
+      window.history.pushState(null, "", "/settings");
+      window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
+      return;
+    }
+    setScreen("home");
+    setActiveTab(tabId);
+    window.history.pushState(null, "", "/");
+    window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
+  }, []);
 
   const handlePortraitSave = (bundle) => {
     setReceiptPortraitDisplayMode(null);
@@ -1010,18 +1409,23 @@ function TheCardApp() {
       if (prev) revokePortraitBundle(prev);
       return bundle;
     });
+    setAvatarStatus("ready");
   };
 
   const handleStartGame = () => {
     setReceiptPortraitDisplayMode(null);
-    setGamePlayers(buildGamePlayersFromSlots(players));
+    const seededPlayers = buildGamePlayersFromSlots(players);
+    setGamePlayers(seededPlayers);
     setHoleRecords([]);
-    setWolfOrder(null);
+    const ids = seededPlayers.map((p) => p.id);
+    const firstWolf = ids[Math.floor(Math.random() * ids.length)] ?? "p-0";
+    setWolfOrder(buildWolfOrderAfterFirstPick(firstWolf, ids));
     setSelectedWolfOverride(null);
     lowWolfPickCommittedHoleRef.current = -1;
     setCurrentHole(1);
     setRoundStatus("playing");
     setRoundShareId(newRoundShareId());
+    saveStakesConfig(stakesConfig);
     setScreen("wolfRound");
   };
 
@@ -1034,25 +1438,25 @@ function TheCardApp() {
         return;
       }
       setRoundStatus("complete");
-      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId));
+      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId, stakesConfig));
       setScreen("recap");
     },
-    [holeRecords, gamePlayers, portraitByPlayerId],
+    [holeRecords, gamePlayers, portraitByPlayerId, stakesConfig],
   );
 
   const openRecapFromHistory = useCallback(
     (round) => {
-      setRoundRecap(buildRecapShareCards(round.holeRecords, round.players, portraitByPlayerId));
+      setRoundRecap(buildRecapShareCards(round.holeRecords, round.players, portraitByPlayerId, stakesConfig));
       setScreen("recap");
     },
-    [portraitByPlayerId],
+    [portraitByPlayerId, stakesConfig],
   );
 
   const handleRecapComplete = () => {
     if (gamePlayers.length === 4 && holeRecords.length > 0) {
       appendCompletedRound(gamePlayers, holeRecords);
       setCompletedRounds(loadCompletedRounds());
-      const snap = buildLastReceiptSnapshot(gamePlayers, holeRecords);
+      const snap = buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig);
       setReceiptPortraitDisplayMode(snap.portraitHeroMode);
       saveLastReceiptSnapshot(snap);
       markReturningUserReceipt();
@@ -1103,7 +1507,7 @@ function TheCardApp() {
     }
     if (merged.length > 0) {
       setRoundStatus("complete");
-      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId));
+      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId, stakesConfig));
       setScreen("recap");
     } else {
       setReceiptPortraitDisplayMode(null);
@@ -1140,11 +1544,29 @@ function TheCardApp() {
               completedRounds={completedRounds}
               onViewRoundRecap={openRecapFromHistory}
               onNewRound={goStartRound}
+              onRunItBack={goRunItBack}
+              onNewGroup={goNewGroup}
+              onShareReceipt={() => setActiveTab("receipt")}
               onPortraitSetup={goPortraitSetup}
               receiptPortrait={receiptPortrait}
               receiptPortraitDisplayMode={receiptPortraitDisplayMode}
               currentUserDisplayName={displayPlayerName(players, 0)}
               lastReceiptSnapshot={lastReceiptSnapshot}
+              receiptThemeId={receiptThemeId}
+              onTabChange={handlePrimaryTabChange}
+            />
+          )}
+          {screen === "settings" && (
+            <SettingsScreen
+              themeId={receiptThemeId}
+              onThemeChange={handleThemeChange}
+              onTabChange={handlePrimaryTabChange}
+              onBack={() => {
+                window.history.pushState(null, "", "/");
+                window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
+                setActiveTab("home");
+                setScreen("home");
+              }}
             />
           )}
           {screen === "portraitSetup" && (
@@ -1153,6 +1575,7 @@ function TheCardApp() {
               onSave={handlePortraitSave}
               initialBundle={receiptPortrait}
               heroDisplayName={displayPlayerName(players, 0)}
+              playerId="p-0"
             />
           )}
           {screen === "startRound" && (
@@ -1161,19 +1584,29 @@ function TheCardApp() {
               onPortraitSetup={goPortraitSetup}
               players={players}
               setPlayers={setPlayers}
-              onStartGame={handleStartGame}
+              onContinueToStakes={goStakesSetup}
               courseName={courseName}
               setCourseName={setCourseName}
               showNearbyCourses={showNearbyCourses}
               setShowNearbyCourses={setShowNearbyCourses}
               selectedTee={selectedTee}
               setSelectedTee={setSelectedTee}
+              startVariant={startVariant}
               portraitByPlayerId={portraitByPlayerId}
               resolveDisplayName={displayPlayerName}
+              avatarStatus={avatarStatus}
+            />
+          )}
+          {screen === "stakesSetup" && (
+            <StakesSetupScreen
+              onBack={() => setScreen("startRound")}
+              stakesConfig={stakesConfig}
+              setStakesConfig={setStakesConfig}
+              onStartRound={handleStartGame}
             />
           )}
           {screen === "recap" && roundRecap && (
-            <RoundRecapScreen recap={roundRecap} onDone={handleRecapComplete} />
+            <RoundRecapScreen recap={roundRecap} onDone={handleRecapComplete} themeId={receiptThemeId} />
           )}
           {screen === "wolfRound" && gamePlayers.length === 4 && (
             <WolfRoundScreen
@@ -1208,6 +1641,9 @@ export default function App() {
   const shareRoute = useMemo(() => matchRoundSharePath(pathname), [pathname]);
   if (shareRoute) {
     return <RoundShareViewerScreen pathShareId={shareRoute.shareId} />;
+  }
+  if (isLeagueInvitePath(pathname)) {
+    return <LeagueInviteScreen />;
   }
   return <TheCardApp />;
 }

@@ -5,8 +5,17 @@
 
 import { buildHoleReceiptPreview, buildRoundHistoryEntry } from "./holeReceiptPreview.js";
 import { aggregateWolfRoundStats, computePointsAwarded, winningPlayerIdsForRecord } from "./scoring.js";
+import { buildStakeCallouts, computeRoundPayout, formatStakeAmount, resolveBaseStake } from "./stakes.js";
 
 const HISTORY_KEY = "the-card-round-history-v1";
+
+function portraitOrFallback(portraitByPlayerId, playerId, context) {
+  const bundle = portraitByPlayerId[playerId] ?? null;
+  if (!bundle) {
+    console.error(`[receipt-avatar-missing] ${context} ${playerId}`);
+  }
+  return bundle;
+}
 
 /**
  * @param {import('./types.js').HoleRecord[]} holeRecords
@@ -98,8 +107,9 @@ function pickWorstBeatHole(holeRecords, allIds) {
  * @param {import('./types.js').HoleRecord[]} holeRecords
  * @param {import('./types.js').GamePlayer[]} gamePlayers
  * @param {Record<string, import('../portrait/types.js').PortraitBundle | null | undefined>} portraitByPlayerId
+ * @param {import('./stakes.js').StakesConfig} [stakesConfig]
  */
-export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerId = {}) {
+export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerId = {}, stakesConfig) {
   const allIds = gamePlayers.map((p) => p.id);
   const history = enrichFullRoundHistory(holeRecords, gamePlayers);
   const names = Object.fromEntries(gamePlayers.map((p) => [p.id, p.name]));
@@ -113,15 +123,33 @@ export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerI
   const top = sortedByPts[0];
   const bottom = sortedByPts[sortedByPts.length - 1];
   const spread = top.wpts - bottom.wpts;
+  const stakes = stakesConfig ?? {
+    preset: 2,
+    customValue: "",
+    loneWolf2x: true,
+    blindWolf3x: true,
+    hideDollarAmounts: false,
+  };
+  const moneyByPlayerId = computeRoundPayout(holeRecords, gamePlayers, stakes);
+  const topMoney = moneyByPlayerId[top.id] ?? 0;
+  const bottomMoney = moneyByPlayerId[bottom.id] ?? 0;
+  const stakeCallouts = buildStakeCallouts(holeRecords, gamePlayers, stakes);
 
-  const standingsBadges = sortedByPts.map((p, i) => `#${i + 1} ${p.name} · +${p.wpts} pts`);
+  const standingsBadges = sortedByPts.map((p, i) => {
+    const money = moneyByPlayerId[p.id] ?? 0;
+    return stakes.hideDollarAmounts
+      ? `#${i + 1} ${p.name} · +${p.wpts} pts`
+      : `#${i + 1} ${p.name} · ${formatStakeAmount(money)}`;
+  });
 
   const finalStandings = {
     playerName: `${top.name} — round winner`,
-    amountLabel: `+${top.wpts} Wolf pts · spread +${spread}`,
+    amountLabel: stakes.hideDollarAmounts
+      ? `+${top.wpts} Wolf pts · spread +${spread}`
+      : `${formatStakeAmount(topMoney)} · spread ${formatStakeAmount(topMoney - bottomMoney)}`,
     stamp: "FINAL STANDINGS",
-    badges: standingsBadges,
-    portraitBundle: portraitByPlayerId[top.id] ?? null,
+    badges: [...standingsBadges, ...stakeCallouts].slice(0, 7),
+    portraitBundle: portraitOrFallback(portraitByPlayerId, top.id, "final-standings"),
     portraitDisplayMode: "winner",
     layout: "default",
     aiFlavorText: "Final table when the last putt dropped.",
@@ -143,7 +171,7 @@ export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerI
           `H${bestPick.record.holeNumber}`,
         ]
       : ["—"],
-    portraitBundle: bestPick ? portraitByPlayerId[bestPick.playerId] ?? null : null,
+    portraitBundle: bestPick ? portraitOrFallback(portraitByPlayerId, bestPick.playerId, "best-moment") : null,
     portraitDisplayMode: "winner",
     layout: "default",
     aiFlavorText: bestPreview?.aiFlavorText || "Biggest single-hole swing on the card.",
@@ -161,7 +189,7 @@ export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerI
         worstPick.holeMode === "blind" ? "Blind Wolf L" : worstPick.holeMode === "lone" ? "Lone Wolf L" : "Hunters W",
       stamp: "WORST BEAT",
       badges: [`H${worstPick.holeNumber}`, worstPick.holeMode],
-      portraitBundle: portraitByPlayerId[worstPick.wolfPlayerId] ?? null,
+      portraitBundle: portraitOrFallback(portraitByPlayerId, worstPick.wolfPlayerId, "worst-beat"),
       portraitDisplayMode: "loser",
       layout: "default",
       aiFlavorText: wprev.aiFlavorText || "That one left a mark.",
@@ -182,7 +210,7 @@ export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerI
       amountLabel: `H${worstPick.holeNumber} · ${(pts[victim] ?? 0) > 0 ? `+${pts[victim]} pts` : "blanked on the swing"}`,
       stamp: "WORST BEAT",
       badges: [`H${worstPick.holeNumber}`, "Big swing"],
-      portraitBundle: portraitByPlayerId[victim] ?? null,
+      portraitBundle: portraitOrFallback(portraitByPlayerId, victim, "worst-beat"),
       portraitDisplayMode: "loser",
       layout: "default",
       aiFlavorText: wprev.aiFlavorText || "Biggest payout hole of the round.",
@@ -194,7 +222,7 @@ export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerI
       amountLabel: `+${lo.wpts} Wolf pts`,
       stamp: "CHOKE",
       badges: ["Bottom of the table"],
-      portraitBundle: portraitByPlayerId[lo.id] ?? null,
+      portraitBundle: portraitOrFallback(portraitByPlayerId, lo.id, "worst-beat"),
       portraitDisplayMode: "loser",
       layout: "default",
       aiFlavorText: "Quiet round on the number.",
@@ -217,10 +245,11 @@ export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerI
       `Lone ${stats.loneWolfAttempts} · ${stats.loneWolfWins}W`,
       `Push ${pushCount}`,
       "ROUND CLOSED",
+      stakes.hideDollarAmounts ? "STAKES HIDDEN" : `Base ${formatStakeAmount(resolveBaseStake(stakes))} / hole`,
       "RECEIPTS POSTED",
       "NO MORE TALK",
     ],
-    portraitBundle: portraitByPlayerId["p-0"] ?? null,
+    portraitBundle: portraitOrFallback(portraitByPlayerId, "p-0", "group-recap"),
     portraitDisplayMode: "neutral",
     layout: "default",
     aiFlavorText: "Run it back anytime.",
