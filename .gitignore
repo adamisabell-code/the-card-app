@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
 
 # Generated avatar files (local disk storage adapter)
 server/public/avatars/

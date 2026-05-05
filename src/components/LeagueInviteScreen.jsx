@@ -1,19 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import html2canvas from "html2canvas";
+import { ReceiptCard } from "./ReceiptCard.jsx";
 import { initialsFromName } from "../portrait/types.js";
+import { savePersistedPortraitProfile } from "../portrait/userPortraitProfile.js";
+import { upsertPlayerAvatarProfileState } from "../portrait/avatarProfileState.js";
+import { generateCalloutReceipt } from "../receipts/services/receiptSystemService.js";
 
 const LEAGUE_INVITES_KEY = "the-card-league-invites-v1";
-
-const CHALLENGE_LINES = [
-  "{name} just joined The Card to prove he's him.",
-  "{name} says your foursome isn't ready.",
-  "{name} just put the group on notice.",
-  "{name} joined The Card. Now somebody has to prove him wrong.",
-  "{name} is officially on the receipt watchlist.",
-  "Your group has been challenged. {name} is in.",
-  "{name} joined the league. Bring your scorecard or bring excuses.",
-  "{name} just made it official. The next round counts.",
-];
+const PRESEASON_STAMPS = ["SEASON ONE LOCKED", "YOU'VE BEEN CALLED OUT", "ANYONE CAN GET IT"];
+const PRESEASON_FLAVORS = ["I joined. You better show up.", "Don't hide. I'm coming for you.", "Who's next?"];
 
 function saveInviteProfile(profile) {
   try {
@@ -26,9 +20,35 @@ function saveInviteProfile(profile) {
   }
 }
 
-function randomChallenge(name) {
-  const pick = CHALLENGE_LINES[Math.floor(Math.random() * CHALLENGE_LINES.length)] ?? CHALLENGE_LINES[0];
-  return pick.replaceAll("{name}", name);
+function randomFrom(list) {
+  return list[Math.floor(Math.random() * list.length)] ?? list[0] ?? "";
+}
+
+async function dataUrlToArrayBuffer(dataUrl) {
+  const response = await fetch(dataUrl);
+  return response.arrayBuffer();
+}
+
+async function persistInvitePortrait(photoDataUrl) {
+  if (!photoDataUrl) return;
+  try {
+    const buf = await dataUrlToArrayBuffer(photoDataUrl);
+    await savePersistedPortraitProfile({
+      version: 1,
+      sourceFingerprint: `league-invite:${Date.now()}`,
+      originalMime: "image/png",
+      originalBuf: buf,
+      baseBuf: buf,
+      styledNeutralBuf: buf,
+      styledWinnerBuf: buf,
+      styledLoserBuf: buf,
+      preferredMode: "neutral",
+      regenerateCount: 0,
+    });
+    upsertPlayerAvatarProfileState("p-0", "ready");
+  } catch {
+    /* ignore portrait persistence failures */
+  }
 }
 
 export function LeagueInviteScreen() {
@@ -37,7 +57,8 @@ export function LeagueInviteScreen() {
   const [photoPreview, setPhotoPreview] = useState("");
   const [photoDataUrl, setPhotoDataUrl] = useState("");
   const [joined, setJoined] = useState(false);
-  const [challengeLine, setChallengeLine] = useState("");
+  const [calloutReceipt, setCalloutReceipt] = useState(null);
+  const [renderedCalloutImage, setRenderedCalloutImage] = useState("");
   const [status, setStatus] = useState("");
   const [isSharing, setIsSharing] = useState(false);
   const receiptRef = useRef(null);
@@ -72,8 +93,30 @@ export function LeagueInviteScreen() {
       source: "league_invite_qr",
     };
     saveInviteProfile(profile);
-    setChallengeLine(randomChallenge(cleanName));
+    const receipt = {
+      type: "preseason_callout",
+      playerName: cleanName,
+      amount: null,
+      stamp: randomFrom(PRESEASON_STAMPS),
+      flavor: randomFrom(PRESEASON_FLAVORS),
+      badges: ["Founding Player"],
+      resultType: "callout",
+    };
+    setCalloutReceipt(receipt);
     setJoined(true);
+    void persistInvitePortrait(photoDataUrl);
+    const portraitForRender = photoDataUrl || null;
+    void generateCalloutReceipt({
+      playerName: cleanName,
+      profilePhotoPath: portraitForRender,
+      portraitUrl: portraitForRender,
+    })
+      .then((rendered) => {
+        setRenderedCalloutImage(rendered.receiptImageUrl);
+      })
+      .catch((error) => {
+        console.error("[receipt-pipeline] callout render failed", error);
+      });
     setStatus("You're in. Receipt generated.");
   }, [email, name, photoDataUrl]);
 
@@ -85,6 +128,10 @@ export function LeagueInviteScreen() {
       setStatus("Could not copy");
     }
   }, [inviteUrl]);
+
+  const onStartFirstRound = useCallback(() => {
+    window.location.href = "/";
+  }, []);
 
   const onShareReceipt = useCallback(async () => {
     if (isSharing) return;
@@ -103,24 +150,6 @@ export function LeagueInviteScreen() {
       setIsSharing(false);
     }
   }, [inviteUrl, isSharing]);
-
-  const onDownloadReceipt = useCallback(async () => {
-    if (!receiptRef.current) return;
-    try {
-      const canvas = await html2canvas(receiptRef.current, {
-        backgroundColor: "#07140f",
-        scale: Math.min(2, window.devicePixelRatio || 1.5),
-        useCORS: true,
-      });
-      const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
-      a.download = "tee-party-receipt.png";
-      a.click();
-      setStatus("Saved");
-    } catch {
-      setStatus("Could not export image");
-    }
-  }, []);
 
   return (
     <div className="league-invite">
@@ -171,9 +200,31 @@ export function LeagueInviteScreen() {
                   )}
                 </div>
                 <div className="league-challenge-receipt__who">
-                  <p className="league-challenge-receipt__name">{name}</p>
-                  <p className="league-challenge-receipt__msg">{challengeLine}</p>
+                  <p className="league-challenge-receipt__name">{calloutReceipt?.playerName ?? name}</p>
+                  <p className="league-challenge-receipt__msg">{calloutReceipt?.stamp ?? "SEASON ONE LOCKED"}</p>
                 </div>
+              </div>
+              <div className="league-challenge-receipt__card-wrap">
+                <ReceiptCard
+                  playerName={calloutReceipt?.playerName ?? name}
+                  amountLabel="$—"
+                  stamp={calloutReceipt?.stamp ?? "SEASON ONE LOCKED"}
+                  badges={calloutReceipt?.badges ?? ["Founding Player"]}
+                  aiFlavorText={calloutReceipt?.flavor ?? "I joined. You better show up."}
+                  initials={initials}
+                  layout="hero"
+                />
+                <p className="league-challenge-receipt__msg league-challenge-receipt__msg--callout">
+                  {calloutReceipt?.flavor ?? "I joined. You better show up."}
+                </p>
+                {renderedCalloutImage ? (
+                  <img
+                    className="settings-screen__dev-preview"
+                    src={renderedCalloutImage}
+                    alt="Rendered callout receipt PNG"
+                    decoding="async"
+                  />
+                ) : null}
               </div>
               <p className="league-challenge-receipt__line">If it&apos;s not on the receipt, it didn&apos;t happen.</p>
             </section>
@@ -181,11 +232,11 @@ export function LeagueInviteScreen() {
               <button type="button" className="btn btn--primary" onClick={onShareReceipt} disabled={isSharing}>
                 {isSharing ? "Sharing..." : "Share Receipt"}
               </button>
-              <button type="button" className="btn btn--outline" onClick={onDownloadReceipt}>
-                Download Receipt
-              </button>
               <button type="button" className="btn btn--outline" onClick={onCopyInviteLink}>
-                Copy Invite Link
+                Invite Your Group
+              </button>
+              <button type="button" className="btn btn--outline" onClick={onStartFirstRound}>
+                Start Your First Round
               </button>
               {status ? <p className="league-invite__status">{status}</p> : null}
             </div>

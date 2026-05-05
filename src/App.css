@@ -1083,12 +1083,71 @@
   color: rgba(167, 243, 208, 0.82);
 }
 
+/* Temporary: OpenAI / receipt-flavor debug (Receipt tab only) */
+.receipt-flavor-debug {
+  width: 100%;
+  max-width: min(27.5rem, 96vw);
+  margin: 0.65rem auto 0;
+  padding: 0.55rem 0.65rem 0.62rem;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 140, 0, 0.45);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 0.65rem;
+  line-height: 1.4;
+  color: rgba(244, 236, 216, 0.78);
+}
+
+.receipt-flavor-debug__title {
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 200, 140, 0.95);
+}
+
+.receipt-flavor-debug__note {
+  margin: 0 0 0.4rem;
+  color: rgba(244, 236, 216, 0.62);
+}
+
+.receipt-flavor-debug__row {
+  margin: 0.12rem 0;
+  word-break: break-word;
+}
+
+.receipt-flavor-debug__code {
+  font-size: 0.62rem;
+  padding: 0.05rem 0.2rem;
+  border-radius: 4px;
+  background: rgba(244, 236, 216, 0.08);
+}
+
 .settings-screen__section {
   margin-bottom: 0.6rem;
 }
 
 .settings-screen__section--placeholder .card__lede {
   color: rgba(244, 236, 216, 0.54);
+}
+
+.settings-screen__dev-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-screen__dev-preview {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 236, 216, 0.2);
+  margin-top: 0.45rem;
+}
+
+.home-rendered-receipt-image {
+  width: 100%;
+  margin-top: 0.55rem;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 236, 216, 0.22);
+  box-shadow: 0 0 24px rgba(0, 191, 255, 0.14);
 }
 
 .home-rounds-list {

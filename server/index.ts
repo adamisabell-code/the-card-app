@@ -9,7 +9,7 @@
  *
  * Run: `npm run server` (requires OPENAI_API_KEY in `.env` or environment).
  */
-import "dotenv/config";
+import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 import path from "node:path";
@@ -19,6 +19,9 @@ import { createOpenAIClient } from "../ai/openaiClient.js";
 import { generateReceiptFlavorLine, isAiReceiptFlavorEnabled } from "../receipts/aiFlavor.js";
 import type { ReceiptFlavorContext } from "../receipts/aiFlavor.js";
 import { createLocalDiskStorage } from "./storageLocal.js";
+import { handleGenerateProfilePortraits } from "./handlers/generateProfilePortraits.js";
+
+dotenv.config();
 
 // TODO: Production "short link" public round storage must be persistent (e.g. Redis, Postgres, or
 // object storage with TTL) — the in-memory `Map` below is per-process, lost on restart, and not
@@ -83,9 +86,31 @@ app.post("/api/avatars", upload.single("image"), async (req, res) => {
 });
 
 app.post("/api/receipt-flavor", async (req, res) => {
+  const debugEnabled = process.env.DEBUG_RECEIPT_FLAVOR === "true";
+  const openaiKeyPresent = !!process.env.OPENAI_API_KEY?.trim();
+  const flavorEnvOn = isAiReceiptFlavorEnabled();
   try {
-    if (!isAiReceiptFlavorEnabled()) {
-      res.json({ aiFlavorText: null });
+    console.log("[api/receipt-flavor] POST", {
+      debugEnabled,
+      enableAiReceiptFlavor: flavorEnvOn,
+      openaiKeyPresent,
+    });
+    if (!flavorEnvOn) {
+      console.warn("[api/receipt-flavor] ENABLE_AI_RECEIPT_FLAVOR is not true — skipping OpenAI");
+      res.json({
+        aiFlavorText: null,
+        ...(debugEnabled
+          ? {
+              debug: {
+                enableAiReceiptFlavor: false,
+                openaiKeyPresent,
+                rawModelContent: null,
+                error: null,
+                note: "Set ENABLE_AI_RECEIPT_FLAVOR=true on the API server to call OpenAI.",
+              },
+            }
+          : {}),
+      });
       return;
     }
     const body = req.body as Partial<ReceiptFlavorContext>;
@@ -99,12 +124,48 @@ app.post("/api/receipt-flavor", async (req, res) => {
       badges: body.badges.map(String),
       stamp: typeof body.stamp === "string" ? body.stamp : "",
     };
+    let rawModelContent: string | undefined;
     const openai = createOpenAIClient();
-    const aiFlavorText = await generateReceiptFlavorLine(openai, ctx);
-    res.json({ aiFlavorText });
-  } catch {
-    res.json({ aiFlavorText: null });
+    const aiFlavorText = await generateReceiptFlavorLine(openai, ctx, {
+      onRaw: (raw) => {
+        rawModelContent = raw;
+      },
+    });
+    console.log("[api/receipt-flavor] result", { aiFlavorText, rawModelContent });
+    res.json({
+      aiFlavorText,
+      ...(debugEnabled
+        ? {
+            debug: {
+              enableAiReceiptFlavor: true,
+              openaiKeyPresent,
+              rawModelContent: rawModelContent ?? null,
+              error: null,
+            },
+          }
+        : {}),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[api/receipt-flavor] error", e);
+    res.json({
+      aiFlavorText: null,
+      ...(debugEnabled
+        ? {
+            debug: {
+              enableAiReceiptFlavor: flavorEnvOn,
+              openaiKeyPresent,
+              rawModelContent: null,
+              error: msg,
+            },
+          }
+        : {}),
+    });
   }
+});
+
+app.post("/api/generate-profile-portraits", async (req, res) => {
+  await handleGenerateProfilePortraits(req, res);
 });
 
 const PUBLIC_ROUND_TTL_MS = 48 * 60 * 60 * 1000;
@@ -165,6 +226,10 @@ app.get("/api/public-round/:id", (req, res) => {
 
 const port = Number(process.env.PORT || 8787);
 app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log("[server/startup] env", {
+    openAiKeyPresent: Boolean(process.env.OPENAI_API_KEY?.trim()),
+  });
   // eslint-disable-next-line no-console
   console.log(`The Card AI server listening on http://127.0.0.1:${port}`);
 });

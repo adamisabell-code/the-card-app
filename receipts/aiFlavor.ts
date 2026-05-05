@@ -38,6 +38,7 @@ export type ReceiptFlavorContext = {
 export async function generateReceiptFlavorLine(
   client: OpenAI,
   ctx: ReceiptFlavorContext,
+  opts?: { onRaw?: (raw: string | undefined) => void },
 ): Promise<string | null> {
   if (!isAiReceiptFlavorEnabled()) return null;
 
@@ -60,6 +61,7 @@ export async function generateReceiptFlavorLine(
   ].join("\n");
 
   try {
+    console.log("[receipt-flavor][server] OpenAI chat.completions.create", { model, receiptType: ctx.receiptType });
     const res = await client.chat.completions.create({
       model,
       temperature: 0.85,
@@ -69,10 +71,16 @@ export async function generateReceiptFlavorLine(
         { role: "user", content: user },
       ],
     });
-    const text = res.choices[0]?.message?.content?.trim();
+    const raw = res.choices[0]?.message?.content;
+    opts?.onRaw?.(typeof raw === "string" ? raw : undefined);
+    console.log("[receipt-flavor][server] raw model content (pre-sanitize):", raw);
+    const text = typeof raw === "string" ? raw.trim() : "";
     if (!text) return null;
-    return sanitizeFlavor(text);
-  } catch {
+    const out = sanitizeFlavor(text);
+    console.log("[receipt-flavor][server] sanitized flavor:", out);
+    return out;
+  } catch (e) {
+    console.error("[receipt-flavor][server] OpenAI error", e);
     return null;
   }
 }
