@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import teePartyLogo from "./assets/tee-party-logo-transparent.png";
 import "./App.css";
+import { TpgMonogramSplash, AppHeaderBrand } from "./components/BrandMark.jsx";
 import { CreateFirstReceiptScreen } from "./components/CreateFirstReceiptScreen.jsx";
 import { ReceiptCard } from "./components/ReceiptCard.jsx";
 import { PortraitSetupFlow } from "./components/PortraitSetupFlow.jsx";
@@ -27,8 +27,11 @@ import {
 import {
   DEMO_RECEIPT_HOME,
   buildLastReceiptSnapshot,
+  getReturningReceiptRoutingDebug,
+  hasCompletedLiveRound,
   hasReturningUserReceipt,
   loadLastReceiptSnapshot,
+  markLiveRoundCompleted,
   markReturningUserReceipt,
   saveLastReceiptSnapshot,
 } from "./home/homeReceipt.js";
@@ -45,6 +48,11 @@ import { putPublicRoundSnapshot } from "./roundShare/publicRoundApi.js";
 import { RoundShareModal } from "./roundShare/RoundShareModal.jsx";
 import { RoundShareViewerScreen } from "./roundShare/RoundShareViewerScreen.jsx";
 import { LeagueInviteScreen } from "./components/LeagueInviteScreen.jsx";
+import { ReturningHomeLaunchpad } from "./components/ReturningHomeLaunchpad.jsx";
+import { StartRoundScreen } from "./components/activation/StartRoundScreen.jsx";
+import { PlayerSetupScreen } from "./components/activation/PlayerSetupScreen.jsx";
+import { StakesSetupScreen } from "./components/activation/StakesSetupScreen.jsx";
+import { InviteGroupScreen } from "./components/activation/InviteGroupScreen.jsx";
 import { ReceiptPipelineDevTools } from "./components/ReceiptPipelineDevTools.jsx";
 import { DEFAULT_RECEIPT_THEME_ID, normalizeReceiptThemeId } from "./receiptThemes.js";
 import { loadPlayerAvatarProfileState } from "./portrait/avatarProfileState.js";
@@ -260,16 +268,10 @@ function OpeningSequence({ phase }) {
           <div className="splash-screen__inner">
             <div className="splash-apt">
               <div className="splash-apt__logo-wrap">
-                <img
-                  className="splash-apt__logo"
-                  src={teePartyLogo}
-                  alt="Austin Tee Party"
-                  width={175}
-                  decoding="async"
-                />
+                <TpgMonogramSplash />
               </div>
             </div>
-            <p className="splash-screen__eyebrow">Where it all began</p>
+            <p className="splash-screen__eyebrow">The society</p>
           </div>
         </div>
       )}
@@ -281,8 +283,8 @@ function OpeningSequence({ phase }) {
         >
           <div className="splash-screen__inner">
             <h1 className="splash-tc-title">The Card</h1>
-            <p className="splash-tc-official">Official scorecard of Austin Tee Party</p>
-            <p className="splash-tc-line">Track rounds. Post the Receipt. Prove it.</p>
+            <p className="splash-tc-official">Official scorecard · Tee Party Golf</p>
+            <p className="splash-tc-line">Post the receipt. Prove you belong.</p>
           </div>
         </div>
       )}
@@ -394,6 +396,8 @@ function HomeScreen({
   onViewRoundRecap,
   onNewRound,
   onRunItBack,
+  onEditGroup,
+  onNewGroupFresh,
   onNewGroup,
   onShareReceipt,
   onPortraitSetup,
@@ -403,9 +407,15 @@ function HomeScreen({
   lastReceiptSnapshot,
   receiptThemeId,
   renderedReceiptImageUrl,
+  stakesConfig,
 }) {
-  const isReturning = hasReturningUserReceipt();
-  const snap = isReturning ? lastReceiptSnapshot ?? loadLastReceiptSnapshot() : null;
+  const persistedSnap = lastReceiptSnapshot ?? loadLastReceiptSnapshot();
+  const isReturning =
+    hasReturningUserReceipt() ||
+    persistedSnap?.snapshotSource === "settings-demo" ||
+    persistedSnap?.snapshotSource === "live-round";
+  const snap =
+    isReturning && persistedSnap?.playerName != null ? persistedSnap : null;
   const receipt =
     snap?.playerName != null
       ? {
@@ -522,22 +532,16 @@ function HomeScreen({
     setShowInstallInstructions(true);
   }, [deferredInstallPromptEvent]);
 
+  const showLaunchpad = Boolean(isReturning && snap?.playerName);
+
   return (
     <>
       <div className="shell__viewport shell__viewport--home">
-        <div className="home-receipt-root">
+        <div className={`home-receipt-root${showLaunchpad ? " home-receipt-root--launchpad" : ""}`}>
           <header className="app-header app-header--home-min">
             <div className="app-header__titles">
-              <div className="app-header__brand-lockup">
-                <img
-                  className="app-header__wolf-mark"
-                  src="/assets/wolf-head.png"
-                  alt=""
-                  decoding="async"
-                />
-                <h1 className="app-header__name app-header__name--home">The Card</h1>
-              </div>
-              <p className="app-header__tagline">{"Tee Party's Scorekeeper"}</p>
+              <AppHeaderBrand title="The Card" />
+              <p className="app-header__tagline">The receipt is the verdict</p>
             </div>
             <button
               type="button"
@@ -554,14 +558,33 @@ function HomeScreen({
             </button>
           </header>
 
-          {activeTab === "home" && (
+          {activeTab === "home" && showLaunchpad ? (
+            <ReturningHomeLaunchpad
+              snap={snap}
+              lastRound={completedRounds[0] ?? null}
+              stakesConfig={stakesConfig}
+              receipt={receipt}
+              portraitBundle={portraitBundle}
+              portraitDisplay={portraitDisplay}
+              initials={initials}
+              receiptThemeId={receiptThemeId}
+              onRunItBack={onRunItBack}
+              onEditGroup={onEditGroup}
+              onShareLastReceipt={onShareReceipt}
+              onNewGroupFresh={onNewGroupFresh}
+              onViewFullReceipt={() => onTabChange("receipt")}
+              onLeagueInvite={() => setInviteModalOpen(true)}
+            />
+          ) : null}
+
+          {activeTab === "home" && !showLaunchpad ? (
             <main className={`home-receipt-main${!isReturning ? " home-receipt-main--new" : ""}`}>
               <section className="home-league-invite" aria-label="League invite">
                 <div className="home-league-invite__card">
                   <p className="home-league-invite__copy">
-                    Invite your group.
+                    Bring your crew.
                     <br />
-                    Let them prove they belong.
+                    Make them prove they belong.
                   </p>
                   <button
                     type="button"
@@ -588,7 +611,7 @@ function HomeScreen({
               </div>
               <div className="home-receipt-cta">
                 <button type="button" className="btn btn--primary btn--home-cta" onClick={isReturning ? onRunItBack : onNewRound}>
-                  {isReturning ? "Run It Back" : "Start First Round"}
+                  {isReturning ? "Run it back" : "Time to make one"}
                 </button>
                 {isReturning ? (
                   <>
@@ -602,15 +625,15 @@ function HomeScreen({
                 ) : null}
               </div>
             </main>
-          )}
+          ) : null}
 
           {activeTab === "rounds" && (
             <main className="home-receipt-main home-tab-main" role="tabpanel" aria-label="Rounds">
               {completedRounds.length === 0 ? (
                 <div className="card home-tab-empty">
-                  <p className="card__lede">No rounds yet. Play your first round.</p>
+                  <p className="card__lede">No receipts yet. Time to make one.</p>
                   <button type="button" className="btn btn--primary btn--compact" onClick={onNewRound}>
-                    Play your first round
+                    Settle the score
                   </button>
                 </div>
               ) : (
@@ -652,9 +675,9 @@ function HomeScreen({
             <main className="home-receipt-main home-tab-main" role="tabpanel" aria-label="Receipt">
               {!isReturning || !snap?.playerName ? (
                 <div className="card home-tab-empty">
-                  <p className="card__lede">No receipts yet. Finish a round to generate one.</p>
+                  <p className="card__lede">No receipts yet. Time to make one.</p>
                   <button type="button" className="btn btn--primary btn--compact" onClick={onNewRound}>
-                    Play your first round
+                    Settle the score
                   </button>
                 </div>
               ) : (
@@ -824,7 +847,7 @@ function HomeScreen({
   );
 }
 
-function SettingsScreen({ themeId, onThemeChange, onBack, onTabChange, portraitBundle, onGenerateTestReceipt, demoBusy }) {
+function SettingsScreen({ themeId, onThemeChange, onBack, onTabChange, portraitBundle, onGenerateTestReceipt, demoBusy, demoError }) {
   return (
     <div className="start-round settings-screen">
       <header className="start-round__header">
@@ -858,6 +881,7 @@ function SettingsScreen({ themeId, onThemeChange, onBack, onTabChange, portraitB
           <button type="button" className="btn btn--outline btn--compact" onClick={onGenerateTestReceipt} disabled={demoBusy}>
             {demoBusy ? "Generating..." : "Generate Test Receipt"}
           </button>
+          {demoError ? <p className="card__lede">{demoError}</p> : null}
         </section>
         <ReceiptPipelineDevTools portraitBundle={portraitBundle} />
       </div>
@@ -919,7 +943,7 @@ function JoinRoundProfileScreen({
   );
 }
 
-function StartRoundScreen({
+function RoundSetupScreen({
   onBack,
   onPortraitSetup,
   players,
@@ -938,7 +962,9 @@ function StartRoundScreen({
 }) {
   const courseAckTimerRef = useRef(null);
   const [coursePickAck, setCoursePickAck] = useState(false);
-  const [showPlayerEditor, setShowPlayerEditor] = useState(startVariant !== "runback");
+  const [showPlayerEditor, setShowPlayerEditor] = useState(
+    startVariant === "edit-group" || startVariant === "standard" || startVariant === "new-group",
+  );
   const [showCourseEditor, setShowCourseEditor] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState("");
 
@@ -1019,13 +1045,19 @@ function StartRoundScreen({
       )}
 
       <div className="start-round__scroll">
-        {startVariant === "runback" ? (
+        {startVariant === "runback" || startVariant === "edit-group" ? (
           <section className="start-round__quick card">
-            <h2 className="card__title card__title--sm">Run It Back</h2>
-            <p className="card__lede">Previous group loaded. Settle it.</p>
+            <h2 className="card__title card__title--sm">
+              {startVariant === "edit-group" ? "Edit your group" : "Run It Back"}
+            </h2>
+            <p className="card__lede">
+              {startVariant === "edit-group"
+                ? "Same stakes loaded — swap names or run it as-is."
+                : "Previous group loaded. Settle it."}
+            </p>
             <div className="start-round__quick-actions">
               <button type="button" className="btn btn--outline btn--compact" onClick={() => setShowPlayerEditor((v) => !v)}>
-                Edit Players
+                {startVariant === "edit-group" ? "Hide players" : "Edit Players"}
               </button>
             </div>
           </section>
@@ -1143,7 +1175,7 @@ function StartRoundScreen({
   );
 }
 
-function StakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound }) {
+function DetailedStakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound }) {
   const baseStake = stakesConfig.preset === "custom"
     ? Number.parseFloat(stakesConfig.customValue || "") || 2
     : stakesConfig.preset;
@@ -1229,9 +1261,24 @@ function StakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound
   );
 }
 
+function initialAppScreen() {
+  try {
+    const hub = hasCompletedLiveRound() ? "home" : "activationStart";
+    if (import.meta.env.DEV) {
+      console.debug("[the-card-routing] initialAppScreen()", {
+        hub,
+        ...getReturningReceiptRoutingDebug(),
+      });
+    }
+    return hub;
+  } catch {
+    return "activationStart";
+  }
+}
+
 function TheCardApp() {
   const [splashPhase, setSplashPhase] = useState("s1");
-  const [screen, setScreen] = useState("home");
+  const [screen, setScreen] = useState(initialAppScreen);
   const [players, setPlayers] = useState(initialPlayers);
   const [courseName, setCourseName] = useState("");
   const [showNearbyCourses, setShowNearbyCourses] = useState(false);
@@ -1278,6 +1325,7 @@ function TheCardApp() {
   const [joinProfileBusy, setJoinProfileBusy] = useState(false);
   const [joinProfileStatus, setJoinProfileStatus] = useState("");
   const [demoReceiptBusy, setDemoReceiptBusy] = useState(false);
+  const [demoReceiptError, setDemoReceiptError] = useState("");
   const pathname = usePathname();
   const lowWolfPickCommittedHoleRef = useRef(/** @type {number} */ (-1));
   const holeRecordsForLowWolfRef = useRef(/** @type {import('./game/types.js').HoleRecord[]} */ ([]));
@@ -1461,6 +1509,17 @@ function TheCardApp() {
     };
   }, []);
 
+  useEffect(() => {
+    if (splashPhase !== "home") return;
+    if (!import.meta.env.DEV) return;
+    console.debug("[the-card-routing] post-splash (splashPhase=home)", {
+      screen,
+      pathname,
+      search: typeof window !== "undefined" ? window.location.search : "",
+      ...getReturningReceiptRoutingDebug(),
+    });
+  }, [splashPhase, screen, pathname]);
+
   const handlePreseasonPortraitSaved = useCallback((bundle) => {
     setReceiptPortrait(bundle);
     setReceiptPortraitDisplayMode(bundle.preferredMode ?? "neutral");
@@ -1477,8 +1536,19 @@ function TheCardApp() {
     setReceiptPortraitDisplayMode(data.bundle.preferredMode ?? "neutral");
   }, []);
 
+  const hubScreenForSession = () => {
+    const hub = hasCompletedLiveRound() ? "home" : "activationStart";
+    if (import.meta.env.DEV) {
+      console.debug("[the-card-routing] hubScreenForSession()", {
+        hub,
+        ...getReturningReceiptRoutingDebug(),
+      });
+    }
+    return hub;
+  };
+
   const goHome = () => {
-    setScreen("home");
+    setScreen(hubScreenForSession());
     setActiveTab("home");
   };
 
@@ -1510,7 +1580,38 @@ function TheCardApp() {
     setSelectedTee("White");
     setStakesConfig(loadStakesConfig());
     setStartVariant("runback");
+    setScreen("stakesSetup");
+  }, []);
+
+  const goEditGroup = useCallback(() => {
+    const last = loadCompletedRounds()[0];
+    if (last?.players?.length) {
+      const seeded = ["", "", "", ""];
+      for (const p of last.players) {
+        if (typeof p.slotIndex === "number" && p.slotIndex >= 0 && p.slotIndex < 4) {
+          seeded[p.slotIndex] = p.name ?? "";
+        }
+      }
+      setPlayers(seeded);
+    }
+    setCourseName("Casual Round");
+    setShowNearbyCourses(false);
+    setSelectedTee("White");
+    setStakesConfig(loadStakesConfig());
+    setStartVariant("edit-group");
     setScreen("startRound");
+  }, []);
+
+  const goFreshActivation = useCallback(() => {
+    setPlayers(initialPlayers());
+    setStakesConfig(loadStakesConfig());
+    setCourseName("Casual Round");
+    setShowNearbyCourses(false);
+    setSelectedTee("White");
+    setStartVariant("standard");
+    window.history.replaceState(null, "", "/");
+    window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
+    setScreen("activationStart");
   }, []);
 
   const goNewGroup = useCallback(() => {
@@ -1545,23 +1646,32 @@ function TheCardApp() {
   }, [clearFirstReceiptPath]);
 
   // Sync in-app `screen` when deep-linked to /first-receipt or /receipt-kit (static hosting has no real router).
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (splashPhase !== "home") return;
     if (isFirstReceiptPath(pathname)) {
+      if (import.meta.env.DEV) {
+        console.debug("[the-card-routing] deep link override → createFirstReceipt", { pathname });
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- URL is external source; maps path â†’ first-receipt step
       setScreen("createFirstReceipt");
       return;
     }
     if (isSettingsPath(pathname)) {
+      if (import.meta.env.DEV) {
+        console.debug("[the-card-routing] deep link override → settings", { pathname });
+      }
       // eslint-disable-next-line react-hooks/set-state-in-effect -- URL is external source; maps path â†’ settings step
       setScreen("settings");
     }
   }, [splashPhase, pathname]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (splashPhase !== "home") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("join") !== "1") return;
+    if (import.meta.env.DEV) {
+      console.debug("[the-card-routing] deep link override → joinRoundProfile", { search: window.location.search });
+    }
     setJoinProfileStatus("");
     setScreen("joinRoundProfile");
   }, [splashPhase]);
@@ -1648,8 +1758,11 @@ function TheCardApp() {
   }, [goStartRoundFromJoinProfile, joinProfileFile, joinProfileName, receiptPortrait]);
 
   const handleGenerateTestReceipt = useCallback(async () => {
+    console.log("Generate Test Receipt clicked");
     setDemoReceiptBusy(true);
+    setDemoReceiptError("");
     try {
+      console.log("Starting demo receipt generation");
       const demoPlayers = DEMO_TEST_ROUND.players.map((p, idx) => ({
         id: p.id,
         slotIndex: idx,
@@ -1675,31 +1788,34 @@ function TheCardApp() {
         },
         receiptNumber: "RECEIPT #DEMO-0001",
       });
+      console.log("Receipt PNG generated");
       setGamePlayers(demoPlayers);
       setHoleRecords(holeRecords);
       setRoundStatus("complete");
       setRoundRecap(buildRecapShareCards(holeRecords, demoPlayers, portraitByPlayerId, demoStakesConfig));
       const snap = buildLastReceiptSnapshot(demoPlayers, holeRecords, demoStakesConfig);
-      saveLastReceiptSnapshot(snap);
-      markReturningUserReceipt();
-      setLastReceiptSnapshot(snap);
+      saveLastReceiptSnapshot({ ...snap, snapshotSource: "settings-demo" });
+      setLastReceiptSnapshot({ ...snap, snapshotSource: "settings-demo" });
       setRenderedReceiptImageUrl(rendered.receiptImageUrl);
       try {
         localStorage.setItem(RENDERED_RECEIPT_IMAGE_KEY, rendered.receiptImageUrl);
       } catch {
         /* ignore */
       }
-      setScreen("recap");
+      setActiveTab("receipt");
+      setScreen("home");
+      console.log("Receipt preview state set");
       window.history.replaceState(null, "", "/");
       window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
     } catch (error) {
       console.error("[receipt-pipeline] test receipt generation failed", error);
+      setDemoReceiptError(`Could not generate test receipt: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setDemoReceiptBusy(false);
     }
   }, [portraitByPlayerId, receiptPortrait]);
 
-  const handleStartGame = () => {
+  const seedActiveRoundFromSlots = useCallback(() => {
     setReceiptPortraitDisplayMode(null);
     const seededPlayers = buildGamePlayersFromSlots(players);
     setGamePlayers(seededPlayers);
@@ -1712,9 +1828,60 @@ function TheCardApp() {
     setCurrentHole(1);
     setRoundStatus("playing");
     setRoundShareId(newRoundShareId());
+  }, [players]);
+
+  const handleStartGame = () => {
+    seedActiveRoundFromSlots();
     saveStakesConfig(stakesConfig);
     setScreen("wolfRound");
   };
+
+  /**
+   * Fast activation path: same round seeding as `handleStartGame` (players → `gamePlayers`, new `roundShareId`, Wolf order).
+   * Invite QR is shown only after this runs; then `onContinueToScoring` routes to `wolfRound`.
+   */
+  const handleActivationLetsGo = useCallback(
+    (nextStakes) => {
+      setStakesConfig(nextStakes);
+      setCourseName("Casual Round");
+      setSelectedTee("White");
+      setStartVariant("standard");
+      seedActiveRoundFromSlots();
+      saveStakesConfig(nextStakes);
+      setScreen("activationInvite");
+    },
+    [seedActiveRoundFromSlots],
+  );
+
+  const resetActivationToStart = useCallback(() => {
+    setReceiptPortraitDisplayMode(null);
+    setHoleRecords([]);
+    setWolfOrder(null);
+    setSelectedWolfOverride(null);
+    lowWolfPickCommittedHoleRef.current = -1;
+    setCurrentHole(1);
+    setGamePlayers([]);
+    setRoundStatus("idle");
+    setRoundShareId(null);
+    setPlayers(initialPlayers());
+    setScreen("activationStart");
+  }, []);
+
+  const goJoinExistingFromActivation = useCallback(() => {
+    setJoinProfileStatus("");
+    window.history.replaceState(null, "", "/?join=1");
+    window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
+    setScreen("joinRoundProfile");
+  }, []);
+
+  const handleEditPreviousHole = useCallback(() => {
+    setHoleRecords((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setCurrentHole(last.holeNumber);
+      return prev.slice(0, -1);
+    });
+  }, []);
 
   const handleHoleComplete = useCallback(
     (record) => {
@@ -1745,9 +1912,10 @@ function TheCardApp() {
       setCompletedRounds(loadCompletedRounds());
       const snap = buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig);
       setReceiptPortraitDisplayMode(snap.portraitHeroMode);
-      saveLastReceiptSnapshot(snap);
+      saveLastReceiptSnapshot({ ...snap, snapshotSource: "live-round" });
+      markLiveRoundCompleted();
       markReturningUserReceipt();
-      setLastReceiptSnapshot(snap);
+      setLastReceiptSnapshot({ ...snap, snapshotSource: "live-round" });
       console.log("[receipt-flavor] round complete â€” scheduling optional AI flavor fetch", {
         playerName: snap.playerName,
         receiptType: snap.receiptType,
@@ -1756,7 +1924,7 @@ function TheCardApp() {
       void fetchReceiptFlavorIfEnabled(snap).then((text) => {
         console.log("[receipt-flavor] flavor fetch finished", { hasText: Boolean(text), text: text ?? null });
         if (!text) return;
-        const merged = { ...snap, aiFlavorText: text };
+        const merged = { ...snap, aiFlavorText: text, snapshotSource: "live-round" };
         saveLastReceiptSnapshot(merged);
         setLastReceiptSnapshot(merged);
       });
@@ -1790,7 +1958,7 @@ function TheCardApp() {
     setRoundStatus("idle");
     setRoundShareId(null);
     setActiveTab("home");
-    setScreen("home");
+    setScreen(hubScreenForSession());
   };
 
   /**
@@ -1808,7 +1976,7 @@ function TheCardApp() {
       setRoundStatus("idle");
       setRoundShareId(null);
       setActiveTab("home");
-      setScreen("home");
+      setScreen(hubScreenForSession());
       return;
     }
     const merged = mergeLastHole ? [...holeRecords, mergeLastHole] : holeRecords;
@@ -1830,7 +1998,7 @@ function TheCardApp() {
       setRoundStatus("idle");
       setRoundShareId(null);
       setActiveTab("home");
-      setScreen("home");
+      setScreen(hubScreenForSession());
     }
   };
 
@@ -1838,7 +2006,12 @@ function TheCardApp() {
     <>
       {splashPhase !== "home" && <OpeningSequence phase={splashPhase} />}
       {splashPhase === "home" && (
-        <div className="shell shell--app-enter" data-round-status={roundStatus}>
+        <div
+          className={`shell shell--app-enter${
+            String(screen).startsWith("activation") ? " shell--activation-flow" : ""
+          }`}
+          data-round-status={roundStatus}
+        >
           {screen === "createFirstReceipt" && (
             <CreateFirstReceiptScreen
               onBack={leavePreseasonToHome}
@@ -1850,13 +2023,15 @@ function TheCardApp() {
           {screen === "home" && (
             <HomeScreen
               activeTab={activeTab}
-              onTabChange={setActiveTab}
+              onTabChange={handlePrimaryTabChange}
               completedRounds={completedRounds}
               onViewRoundRecap={openRecapFromHistory}
               onNewRound={goStartRound}
               onRunItBack={goRunItBack}
+              onEditGroup={goEditGroup}
+              onNewGroupFresh={goFreshActivation}
               onNewGroup={goNewGroup}
-              onShareReceipt={() => setActiveTab("receipt")}
+              onShareReceipt={() => handlePrimaryTabChange("receipt")}
               onPortraitSetup={goPortraitSetup}
               receiptPortrait={receiptPortrait}
               receiptPortraitDisplayMode={receiptPortraitDisplayMode}
@@ -1864,7 +2039,7 @@ function TheCardApp() {
               lastReceiptSnapshot={lastReceiptSnapshot}
               receiptThemeId={receiptThemeId}
               renderedReceiptImageUrl={renderedReceiptImageUrl}
-              onTabChange={handlePrimaryTabChange}
+              stakesConfig={stakesConfig}
             />
           )}
           {screen === "settings" && (
@@ -1875,6 +2050,7 @@ function TheCardApp() {
               portraitBundle={receiptPortrait}
               onGenerateTestReceipt={handleGenerateTestReceipt}
               demoBusy={demoReceiptBusy}
+              demoError={demoReceiptError}
               onBack={() => {
                 window.history.pushState(null, "", "/");
                 window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
@@ -1904,8 +2080,39 @@ function TheCardApp() {
               playerId="p-0"
             />
           )}
-          {screen === "startRound" && (
+          {/* First-time activation (no `hasReturningUserReceipt`): scorekeeper-first; full wizard remains `RoundSetupScreen` + `DetailedStakesSetupScreen`. */}
+          {screen === "activationStart" && (
             <StartRoundScreen
+              onStartWolfMatch={() => {
+                setPlayers(initialPlayers());
+                setScreen("activationPlayers");
+              }}
+              onJoinExistingRound={goJoinExistingFromActivation}
+            />
+          )}
+          {screen === "activationPlayers" && (
+            <PlayerSetupScreen
+              players={players}
+              setPlayers={setPlayers}
+              onBack={() => setScreen("activationStart")}
+              onContinue={() => setScreen("activationStakes")}
+            />
+          )}
+          {screen === "activationStakes" && (
+            <StakesSetupScreen
+              onBack={() => setScreen("activationPlayers")}
+              onLetsGo={handleActivationLetsGo}
+            />
+          )}
+          {screen === "activationInvite" && (
+            <InviteGroupScreen
+              getSnapshot={getRoundShareSnapshot}
+              onContinueToScoring={() => setScreen("wolfRound")}
+              onCancelRound={resetActivationToStart}
+            />
+          )}
+          {screen === "startRound" && (
+            <RoundSetupScreen
               onBack={goHome}
               onPortraitSetup={goPortraitSetup}
               players={players}
@@ -1924,7 +2131,7 @@ function TheCardApp() {
             />
           )}
           {screen === "stakesSetup" && (
-            <StakesSetupScreen
+            <DetailedStakesSetupScreen
               onBack={() => setScreen("startRound")}
               stakesConfig={stakesConfig}
               setStakesConfig={setStakesConfig}
@@ -1945,6 +2152,7 @@ function TheCardApp() {
               portraitByPlayerId={portraitByPlayerId}
               holeRecords={holeRecords}
               onHoleComplete={handleHoleComplete}
+              onEditPreviousHole={handleEditPreviousHole}
               onEndRound={handleEndRound}
               roundElo={roundElo}
               roundResult={roundResult}

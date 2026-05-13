@@ -7,7 +7,7 @@ import {
 import { upsertPlayerAvatarProfileState } from "../../portrait/avatarProfileState.js";
 import { receiptLog } from "./receiptDebugLogger.js";
 
-export const RECEIPT_PORTRAIT_PLACEHOLDER_PATH = "/assets/wolf-head.png";
+export const RECEIPT_PORTRAIT_PLACEHOLDER_PATH = "/assets/tpg-monogram.svg";
 
 /**
  * @param {{ file: File, playerId?: string, playerName?: string, previousBundle?: import('../../portrait/types.js').PortraitBundle | null }} input

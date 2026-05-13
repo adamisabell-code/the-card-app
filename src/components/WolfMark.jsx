@@ -20,9 +20,9 @@ export function WolfMark({ className = "" }) {
     >
       <defs>
         <linearGradient id={gid} x1="6" y1="4" x2="28" y2="30" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#7ee8ff" />
-          <stop offset="0.45" stopColor="#00bfff" />
-          <stop offset="1" stopColor="#006080" />
+          <stop stopColor="#d8c8a0" />
+          <stop offset="0.4" stopColor="#00d4c7" />
+          <stop offset="1" stopColor="#0a3d38" />
         </linearGradient>
         <filter id={fid} x="-40%" y="-40%" width="180%" height="180%">
           <feGaussianBlur stdDeviation="1.2" result="b" />

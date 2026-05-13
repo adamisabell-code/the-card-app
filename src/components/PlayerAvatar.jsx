@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { getReceiptPortraitUrl, initialsFromName } from "../portrait/types.js";
 
-const WOLF_HEAD_SRC = "/assets/wolf-head.png";
+/** Current-hole Wolf tile — transparent PNG in `public/assets/wolf-logo.png`. */
+const WOLF_LOGO_PNG = "/assets/wolf-logo.png";
 
 /**
  * @param {{
@@ -19,11 +20,11 @@ export function PlayerAvatar({
   size = "sm",
   className = "",
 }) {
-  const [wolfImgFailed, setWolfImgFailed] = useState(false);
+  const [wolfIconFailed, setWolfIconFailed] = useState(false);
   const initials = initialsFromName(displayName || "?");
 
   useEffect(() => {
-    if (isCurrentWolf) setWolfImgFailed(false);
+    if (isCurrentWolf) setWolfIconFailed(false);
   }, [isCurrentWolf]);
 
   const root = `player-avatar player-avatar--${size}${isCurrentWolf ? " player-avatar--wolf" : ""} ${className}`.trim();
@@ -31,19 +32,20 @@ export function PlayerAvatar({
   if (isCurrentWolf) {
     return (
       <div className={root} title="Wolf — this hole">
-        {wolfImgFailed ? (
+        {wolfIconFailed ? (
           <span className="player-avatar__initials" aria-hidden="true">
             {initials}
           </span>
         ) : (
           <img
-            className="player-avatar__wolf-mark"
-            src={WOLF_HEAD_SRC}
+            className="player-avatar__wolf-icon"
+            src={WOLF_LOGO_PNG}
             alt=""
             width={40}
             height={40}
             decoding="async"
-            onError={() => setWolfImgFailed(true)}
+            draggable={false}
+            onError={() => setWolfIconFailed(true)}
           />
         )}
       </div>

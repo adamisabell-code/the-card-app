@@ -12,7 +12,7 @@ import { PORTRAIT_OUTPUT } from "../portrait/receiptPortraitSpec.js";
  *   badges?: string[]
  *   portraitBundle?: import('../portrait/types.js').PortraitBundle | null
  *   portraitDisplayMode?: import('../portrait/types.js').PortraitMode | null
- *   layout?: 'default' | 'hero'
+ *   layout?: 'default' | 'hero' | 'compact'
  *   initials: string
  *   aiFlavorText?: string | null
  *   themeId?: string
@@ -32,7 +32,7 @@ export function ReceiptCard({
 }) {
   const portraitUrl = getReceiptPortraitUrl(portraitBundle, portraitDisplayMode);
   const rootClass = `receipt-preview receipt-card receipt-theme receipt-theme--${themeId}${
-    layout === "hero" ? " receipt-preview--hero" : ""
+    layout === "hero" ? " receipt-preview--hero" : layout === "compact" ? " receipt-preview--compact" : ""
   }`;
 
   return (

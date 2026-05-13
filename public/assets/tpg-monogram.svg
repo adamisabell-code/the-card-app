@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none">
+  <defs>
+    <linearGradient id="a" x1="8" y1="8" x2="72" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C58B2A"/>
+      <stop offset="0.55" stop-color="#00D4C7"/>
+      <stop offset="1" stop-color="#0a3d38"/>
+    </linearGradient>
+    <linearGradient id="b" x1="40" y1="12" x2="40" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D8C8A0" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#D8C8A0" stop-opacity="0.35"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="74" height="74" rx="10" fill="#111111" stroke="url(#a)" stroke-width="2"/>
+  <text x="40" y="52" text-anchor="middle" font-family="Impact,Anton,Arial Black,sans-serif" font-size="26" letter-spacing="0.02em" fill="url(#b)">TPG</text>
+</svg>

@@ -8,9 +8,8 @@ import { HoleWinnerSelector } from "./HoleWinnerSelector.jsx";
  *   partnerPlayerId: string | null
  *   players: import('../game/types.js').GamePlayer[]
  *   winningSide: 'wolf_side' | 'opponent_side' | 'tie' | null
- *   onWinningSideChange: (v: 'wolf_side' | 'opponent_side' | 'tie') => void
- *   onConfirm: () => void
- *   confirmDisabled?: boolean
+ *   onResultSelect: (v: 'wolf_side' | 'opponent_side' | 'tie') => void
+ *   onBackFromResult?: () => void
  * }} props
  */
 export function HoleResultScreen({
@@ -20,9 +19,8 @@ export function HoleResultScreen({
   partnerPlayerId,
   players,
   winningSide,
-  onWinningSideChange,
-  onConfirm,
-  confirmDisabled,
+  onResultSelect,
+  onBackFromResult,
 }) {
   const name = (id) => players.find((p) => p.id === id)?.name ?? id;
   const wolfName = name(wolfPlayerId);
@@ -35,6 +33,13 @@ export function HoleResultScreen({
 
   return (
     <section className="hole-result" aria-label="Hole result">
+      {onBackFromResult ? (
+        <div className="hole-result__nav">
+          <button type="button" className="btn btn--ghost btn--lg hole-result__back" onClick={onBackFromResult}>
+            Back
+          </button>
+        </div>
+      ) : null}
       <p className="hole-result__eyebrow">Hole {holeNumber}</p>
       <h2 className="hole-result__title">Who took it?</h2>
       <p className="hole-result__context">
@@ -74,12 +79,8 @@ export function HoleResultScreen({
         partnerName={partnerName}
         fieldLabel={fieldLabel}
         value={winningSide}
-        onChange={onWinningSideChange}
+        onChange={onResultSelect}
       />
-
-      <button type="button" className="btn btn--primary btn--lg hole-result__confirm" onClick={onConfirm} disabled={confirmDisabled}>
-        Lock hole result
-      </button>
     </section>
   );
 }
