@@ -1,9 +1,12 @@
 /**
- * Build square PWA / touch icons from `public/assets/the-card-logo.png`.
+ * Copy the hand-authored master app icon into all PWA / favicon raster sizes.
  *
- * Renders an opaque #071f13 canvas, then composites the logo scaled to fit
- * inside a padded inner box (aspect preserved). Avoids `resize(..., contain)`
- * edge cases that can leave transparent/white bands on wide marks.
+ * Source of truth: `public/assets/the-card-app-icon.png` (square master, opaque).
+ * Outputs (overwritten each run):
+ *   - public/icon-192.png
+ *   - public/icon-512.png
+ *   - public/apple-touch-icon.png (180×180)
+ *   - public/icon-32.png
  *
  * Run: npm run generate:pwa-icons
  */
@@ -13,47 +16,20 @@ import sharp from "sharp";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
-const src = path.join(root, "public/assets/the-card-logo.png");
-const BG = { r: 7, g: 31, b: 19 };
+const src = path.join(root, "public/assets/the-card-app-icon.png");
 
-/** Max logo span along each axis (~72% of edge → ~14% padding; wide mark reads bold at 65–75% width target). */
-const INNER_RATIO = 0.72;
-
-async function emitSquare(size, outName) {
-  const inner = Math.max(8, Math.round(size * INNER_RATIO));
-
-  const logoBuf = await sharp(src)
-    .resize(inner, inner, {
-      fit: "inside",
-      withoutEnlargement: false,
+async function emitScaled(size, outName) {
+  await sharp(src)
+    .resize(size, size, {
+      fit: "fill",
+      kernel: sharp.kernel.lanczos3,
     })
     .png()
-    .toBuffer();
-
-  const meta = await sharp(logoBuf).metadata();
-  const w = meta.width ?? inner;
-  const h = meta.height ?? inner;
-  const left = Math.round((size - w) / 2);
-  const top = Math.round((size - h) / 2);
-
-  await sharp({
-    create: {
-      width: size,
-      height: size,
-      channels: 3,
-      background: BG,
-    },
-  })
-    .composite([{ input: logoBuf, left, top }])
-    .png()
     .toFile(path.join(root, "public", outName));
-
-  console.log(`Wrote public/${outName} (${size}×${size}, inner≈${inner}px)`);
+  console.log(`Wrote public/${outName} (${size}×${size}) from the-card-app-icon.png`);
 }
 
-await emitSquare(192, "icon-192.png");
-await emitSquare(512, "icon-512.png");
-/** iOS home screen (recommended minimum). */
-await emitSquare(180, "apple-touch-icon.png");
-/** Small tab favicon. */
-await emitSquare(32, "icon-32.png");
+await emitScaled(192, "icon-192.png");
+await emitScaled(512, "icon-512.png");
+await emitScaled(180, "apple-touch-icon.png");
+await emitScaled(32, "icon-32.png");
