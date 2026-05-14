@@ -16,8 +16,8 @@ const root = path.join(__dirname, "..");
 const src = path.join(root, "public/assets/the-card-logo.png");
 const BG = { r: 7, g: 31, b: 19 };
 
-/** ~18% inset each side → logo uses ~64% of the edge (generous padding). */
-const INNER_RATIO = 0.64;
+/** Max logo span along each axis (~72% of edge → ~14% padding; wide mark reads bold at 65–75% width target). */
+const INNER_RATIO = 0.72;
 
 async function emitSquare(size, outName) {
   const inner = Math.max(8, Math.round(size * INNER_RATIO));
