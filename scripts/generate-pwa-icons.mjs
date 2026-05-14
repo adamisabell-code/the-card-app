@@ -1,7 +1,9 @@
 /**
- * Rasterize `public/assets/the-card-logo.png` into square PWA / touch icons
- * with letterboxing on #071f13 (manifest background) so the mark stays centered
- * and never clipped.
+ * Build square PWA / touch icons from `public/assets/the-card-logo.png`.
+ *
+ * Renders an opaque #071f13 canvas, then composites the logo scaled to fit
+ * inside a padded inner box (aspect preserved). Avoids `resize(..., contain)`
+ * edge cases that can leave transparent/white bands on wide marks.
  *
  * Run: npm run generate:pwa-icons
  */
@@ -12,18 +14,41 @@ import sharp from "sharp";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..");
 const src = path.join(root, "public/assets/the-card-logo.png");
-const bg = "#071f13";
+const BG = { r: 7, g: 31, b: 19 };
+
+/** ~18% inset each side → logo uses ~64% of the edge (generous padding). */
+const INNER_RATIO = 0.64;
 
 async function emitSquare(size, outName) {
-  await sharp(src)
-    .resize(size, size, {
-      fit: "contain",
-      background: bg,
-      position: "centre",
+  const inner = Math.max(8, Math.round(size * INNER_RATIO));
+
+  const logoBuf = await sharp(src)
+    .resize(inner, inner, {
+      fit: "inside",
+      withoutEnlargement: false,
     })
     .png()
+    .toBuffer();
+
+  const meta = await sharp(logoBuf).metadata();
+  const w = meta.width ?? inner;
+  const h = meta.height ?? inner;
+  const left = Math.round((size - w) / 2);
+  const top = Math.round((size - h) / 2);
+
+  await sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 3,
+      background: BG,
+    },
+  })
+    .composite([{ input: logoBuf, left, top }])
+    .png()
     .toFile(path.join(root, "public", outName));
-  console.log(`Wrote public/${outName} (${size}×${size})`);
+
+  console.log(`Wrote public/${outName} (${size}×${size}, inner≈${inner}px)`);
 }
 
 await emitSquare(192, "icon-192.png");
