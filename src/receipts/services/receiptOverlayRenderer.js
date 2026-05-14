@@ -131,9 +131,11 @@ function createSilhouetteHero(w = 560, h = 760) {
 async function loadPortraitForReceipt(layerUrl, uploadedUrl) {
   /** @type {string[]} */
   const tried = [];
-  /** Block legacy mascot portrait URLs only (not league wolf logo assets like `wolf-logo.png`). */
+  /** Block legacy mascot / brand portrait URLs (not in-round wolf tile `wolf-logo.png`). */
   const isWolfLike = (value) =>
-    /wolf-mark\.(png|svg|webp)|wolf-head\.(png|svg|webp)|mascot|logo-head|tee-party-logo/i.test(String(value ?? ""));
+    /the-card-logo\.(png|webp)|wolf-mark\.(png|svg|webp)|wolf-head\.(png|svg|webp)|mascot|logo-head|tee-party-logo/i.test(
+      String(value ?? ""),
+    );
   const candidates = [uploadedUrl, layerUrl].filter((u) => u != null && u !== "" && !isWolfLike(u));
   for (const u of candidates) {
     const s = String(u);

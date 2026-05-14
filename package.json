@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "server": "tsx server/index.ts"
+    "server": "tsx server/index.ts",
+    "generate:pwa-icons": "node scripts/generate-pwa-icons.mjs"
   },
   "dependencies": {
     "html2canvas": "^1.4.1",
@@ -33,6 +34,7 @@
     "globals": "^17.5.0",
     "multer": "^1.4.5-lts.1",
     "openai": "^4.104.0",
+    "sharp": "^0.34.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^8.0.9",
