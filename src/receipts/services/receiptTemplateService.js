@@ -31,6 +31,16 @@ export function buildEndRoundReceiptTemplate(params) {
     ? formatStakeAmount(params.roundStats.moneyRaw)
     : String(params.roundStats.money ?? "$0");
 
+  const formatReceiptLabel =
+    typeof params.formatReceiptLabel === "string" && params.formatReceiptLabel.trim()
+      ? params.formatReceiptLabel.trim()
+      : "";
+
+  const wolfStats =
+    params.roundStats?.wolfStatsLine != null && String(params.roundStats.wolfStatsLine).trim()
+      ? String(params.roundStats.wolfStatsLine).trim()
+      : `Blind ${params.roundStats.blindWolf ?? "0/0"} · Lone ${params.roundStats.loneWolf ?? "0/0"}`;
+
   return {
     kind: "end_round",
     receiptType: String(params.receiptType ?? "neutral").toLowerCase(),
@@ -38,6 +48,7 @@ export function buildEndRoundReceiptTemplate(params) {
     playerName: params.playerName,
     headline: params.receiptCopy.headline,
     subheadline: params.receiptCopy.subheadline,
+    formatReceiptLabel,
     moneyLabel: money,
     scoreVsPar: String(params.roundStats.scoreVsPar ?? "N/A"),
     holesWon: String(params.roundStats.holesWon ?? "0"),
@@ -45,7 +56,7 @@ export function buildEndRoundReceiptTemplate(params) {
     badge: String(params.roundStats.badge ?? params.receiptType),
     badges: [],
     statusLabel: money.startsWith("-") ? "EXPOSED" : "PAID",
-    wolfStats: `Blind ${params.roundStats.blindWolf ?? "0/0"} · Lone ${params.roundStats.loneWolf ?? "0/0"}`,
+    wolfStats,
     shareCta: "If it's not on the receipt, it didn't happen.",
     qrUrl: params.qrUrl ?? window.location.origin,
     branding: "THE CARD · AUSTIN TEE PARTY",

@@ -4,6 +4,8 @@
  */
 
 import { buildHoleReceiptPreview, buildRoundHistoryEntry } from "./holeReceiptPreview.js";
+import { normalizeRoundFormat } from "./gameFormats.js";
+import { aggregateStrokeGrossTotals, rankStrokeGrossAscending, strokeVictoryMargin } from "./strokeScoring.js";
 import { aggregateWolfRoundStats, computePointsAwarded, winningPlayerIdsForRecord } from "./scoring.js";
 import { buildStakeCallouts, computeRoundPayout, formatStakeAmount, resolveBaseStake } from "./stakes.js";
 
@@ -24,6 +26,157 @@ function portraitOrFallback(portraitByPlayerId, playerId, context) {
  */
 export function enrichFullRoundHistory(holeRecords, gamePlayers) {
   return holeRecords.map((h) => buildRoundHistoryEntry(h, gamePlayers));
+}
+
+/**
+ * @param {import('./types.js').HoleRecord[]} holeRecords
+ * @param {import('./types.js').GamePlayer[]} gamePlayers
+ * @param {Record<string, import('../portrait/types.js').PortraitBundle | null | undefined>} portraitByPlayerId
+ * @param {import('./stakes.js').StakesConfig} [stakesConfig]
+ */
+function buildStrokeRecapShareCards(holeRecords, gamePlayers, portraitByPlayerId, stakesConfig) {
+  const allIds = gamePlayers.map((p) => p.id);
+  const names = Object.fromEntries(gamePlayers.map((p) => [p.id, p.name]));
+  const history = enrichFullRoundHistory(holeRecords, gamePlayers);
+  const totals = aggregateStrokeGrossTotals(holeRecords);
+  const ranked = rankStrokeGrossAscending(gamePlayers, totals);
+  const leader = ranked[0];
+  const trailer = ranked[ranked.length - 1];
+  const margin = strokeVictoryMargin(ranked);
+  const coWinners = ranked.filter((p) => p.gross === leader.gross);
+  const winnerLabel = coWinners.length > 1 ? coWinners.map((p) => p.name).join(" · ") : leader.name;
+
+  const stakes = stakesConfig ?? {
+    preset: 2,
+    customValue: "",
+    loneWolf2x: true,
+    blindWolf3x: true,
+    hideDollarAmounts: false,
+  };
+  const moneyByPlayerId = computeRoundPayout(holeRecords, gamePlayers, stakes);
+  const stakeCallouts = buildStakeCallouts(holeRecords, gamePlayers, stakes);
+
+  /** @type {{ hole: number, playerId: string, gross: number, par: number } | null} */
+  let bestPick = null;
+  let bestRel = 1;
+  for (const h of holeRecords) {
+    if (!h.strokeGrossByPlayerId || h.strokePar == null) continue;
+    const par = h.strokePar;
+    for (const id of allIds) {
+      const g = h.strokeGrossByPlayerId[id] ?? 99;
+      const rel = g - par;
+      if (rel < bestRel) {
+        bestRel = rel;
+        bestPick = { hole: h.holeNumber, playerId: id, gross: g, par };
+      }
+    }
+  }
+
+  /** @type {{ hole: number, playerId: string, gross: number } | null} */
+  let worstPick = null;
+  let worstGross = -1;
+  for (const h of holeRecords) {
+    if (!h.strokeGrossByPlayerId) continue;
+    for (const id of allIds) {
+      const g = h.strokeGrossByPlayerId[id] ?? 0;
+      if (g > worstGross) {
+        worstGross = g;
+        worstPick = { hole: h.holeNumber, playerId: id, gross: g };
+      }
+    }
+  }
+
+  let relWord = "—";
+  if (bestPick) {
+    const d = bestPick.gross - bestPick.par;
+    if (d <= -2) relWord = "Eagle+";
+    else if (d === -1) relWord = "Birdie";
+    else if (d === 0) relWord = "Par";
+    else relWord = `+${d}`;
+  }
+
+  const marginLabel =
+    coWinners.length > 1 ? `Tied at ${leader.gross} gross` : `Margin ${margin} stroke${margin === 1 ? "" : "s"}`;
+
+  const leaderGross = leader.gross;
+  const nextTierPlayers = ranked.filter((p) => p.gross > leaderGross);
+  let nextScoreLine;
+  if (nextTierPlayers.length === 0) {
+    nextScoreLine =
+      coWinners.length > 1 ? `No runner-up · tied at ${leaderGross} gross` : `Clear win · ${leaderGross} gross`;
+  } else {
+    const nextGross = nextTierPlayers[0].gross;
+    const atNext = nextTierPlayers.filter((p) => p.gross === nextGross);
+    const namesJoined = atNext.map((p) => p.name).join(" · ");
+    nextScoreLine =
+      atNext.length > 1 ? `Next · ${namesJoined} (${nextGross})` : `Runner-up · ${namesJoined} (${nextGross})`;
+  }
+
+  const finalStandings = {
+    playerName: `${winnerLabel} — ${leader.gross} gross`,
+    amountLabel: marginLabel,
+    stamp: "FINAL STANDINGS",
+    badges: [...ranked.map((p, i) => `#${i + 1} ${p.name} · ${p.gross}`), ...stakeCallouts].slice(0, 7),
+    portraitBundle: portraitOrFallback(portraitByPlayerId, leader.id, "final-standings"),
+    portraitDisplayMode: "winner",
+    layout: "default",
+    aiFlavorText: "FORMAT: STROKE PLAY — totals on the card.",
+  };
+
+  const bestMoment = {
+    playerName: bestPick ? names[bestPick.playerId] || "—" : "—",
+    amountLabel: bestPick ? `${bestPick.gross} on H${bestPick.hole} (${relWord} vs par ${bestPick.par})` : "—",
+    stamp: "BEST MOMENT",
+    badges: bestPick ? [`H${bestPick.hole}`, relWord] : ["—"],
+    portraitBundle: bestPick ? portraitOrFallback(portraitByPlayerId, bestPick.playerId, "best-moment") : null,
+    portraitDisplayMode: "winner",
+    layout: "default",
+    aiFlavorText: "Best score vs par this round.",
+  };
+
+  const worstBeat = worstPick
+    ? {
+        playerName: names[worstPick.playerId] || "—",
+        amountLabel: `${worstPick.gross} on H${worstPick.hole}`,
+        stamp: "WORST BEAT",
+        badges: ["Big number"],
+        portraitBundle: portraitOrFallback(portraitByPlayerId, worstPick.playerId, "worst-beat"),
+        portraitDisplayMode: "loser",
+        layout: "default",
+        aiFlavorText: "That one counted.",
+      }
+    : {
+        playerName: trailer.name,
+        amountLabel: `${trailer.gross} gross`,
+        stamp: "COLD SEAT",
+        badges: ["Back of the pack"],
+        portraitBundle: portraitOrFallback(portraitByPlayerId, trailer.id, "worst-beat"),
+        portraitDisplayMode: "loser",
+        layout: "default",
+        aiFlavorText: "Rough day on the numbers.",
+      };
+
+  const spreadTopBottom = trailer.gross - leader.gross;
+  const groupRecap = {
+    playerName: "The Card",
+    amountLabel: `${holeRecords.length} holes · stroke play`,
+    stamp: "GROUP RECAP",
+    badges: [
+      "FORMAT: STROKE PLAY",
+      `Winner · ${winnerLabel} (${leader.gross})`,
+      nextScoreLine,
+      `Top vs bottom · ${spreadTopBottom} stroke${spreadTopBottom === 1 ? "" : "s"}`,
+      stakes.hideDollarAmounts ? "STAKES HIDDEN" : `Side pot shell · ${formatStakeAmount(moneyByPlayerId[leader.id] ?? 0)} (P1)`,
+      "GROSS ONLY · NO HANDICAP",
+      "RECEIPTS POSTED",
+    ],
+    portraitBundle: portraitOrFallback(portraitByPlayerId, "p-0", "group-recap"),
+    portraitDisplayMode: "neutral",
+    layout: "default",
+    aiFlavorText: "Lowest gross wins. Run it back.",
+  };
+
+  return { finalStandings, bestMoment, worstBeat, groupRecap, history };
 }
 
 /**
@@ -108,8 +261,14 @@ function pickWorstBeatHole(holeRecords, allIds) {
  * @param {import('./types.js').GamePlayer[]} gamePlayers
  * @param {Record<string, import('../portrait/types.js').PortraitBundle | null | undefined>} portraitByPlayerId
  * @param {import('./stakes.js').StakesConfig} [stakesConfig]
+ * @param {import('./gameFormats.js').RoundFormatId} [roundFormat]
  */
-export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerId = {}, stakesConfig) {
+export function buildRecapShareCards(holeRecords, gamePlayers, portraitByPlayerId = {}, stakesConfig, roundFormat = "wolf") {
+  const fmt = normalizeRoundFormat(roundFormat);
+  if (fmt === "stroke") {
+    return buildStrokeRecapShareCards(holeRecords, gamePlayers, portraitByPlayerId, stakesConfig);
+  }
+
   const allIds = gamePlayers.map((p) => p.id);
   const history = enrichFullRoundHistory(holeRecords, gamePlayers);
   const names = Object.fromEntries(gamePlayers.map((p) => [p.id, p.name]));

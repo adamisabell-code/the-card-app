@@ -5,6 +5,10 @@
  * @returns {{ line1: string, line2: string }}
  */
 export function buildHoleQuickConfirm(record, players) {
+  if (record.strokeGrossByPlayerId && record.strokePar != null) {
+    const bits = players.map((p) => `${p.name}: ${record.strokeGrossByPlayerId[p.id] ?? "—"}`).join(" · ");
+    return { line1: `Par ${record.strokePar} · ${bits}`, line2: "" };
+  }
   void players;
   if (record.winningSide === "tie") {
     return { line1: "Push. No blood.", line2: "" };
@@ -42,6 +46,20 @@ export function buildHoleQuickConfirm(record, players) {
  */
 export function buildHoleReceiptPreview(record, players) {
   const names = Object.fromEntries(players.map((p) => [p.id, p.name]));
+
+  if (record.strokeGrossByPlayerId && record.strokePar != null) {
+    const par = record.strokePar;
+    const bits = players.map((p) => `${names[p.id] ?? p.id}: ${record.strokeGrossByPlayerId[p.id] ?? "—"}`).join(" · ");
+    return {
+      playerName: `Hole ${record.holeNumber}`,
+      amountLabel: `Par ${par} · ${bits}`,
+      stamp: "STROKE",
+      badges: ["Gross", `Par ${par}`],
+      portraitDisplayMode: "neutral",
+      aiFlavorText: null,
+    };
+  }
+
   const wolfName = names[record.wolfPlayerId] || "Wolf";
   const pts = record.pointsAwardedByPlayerId?.[record.wolfPlayerId] ?? 0;
 

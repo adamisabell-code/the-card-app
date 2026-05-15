@@ -2,6 +2,10 @@
  * @typedef {`p-${0|1|2|3}`} PlayerId
  */
 
+/**
+ * @typedef {'stroke' | 'match' | 'skins' | 'nassau' | 'wolf'} RoundFormatId
+ */
+
 /** @typedef {'normal' | 'lone' | 'blind'} HoleMode */
 
 /**
@@ -58,6 +62,7 @@
  *   holeRecords: HoleRecord[]
  *   pressStats: { byPlayerId: Record<string, PressPlayerStats>, totalPresses: number }
  *   moneyByPlayerId?: Record<string, number> | null
+ *   roundFormat?: RoundFormatId
  * }} RoundResult
  */
 
@@ -76,6 +81,8 @@
  *   winningPlayerIds: string[]
  *   holeOutcomeLabel?: string
  *   presses?: PressEvent[]
+ *   strokeGrossByPlayerId?: Record<string, number>
+ *   strokePar?: number
  * }} HoleRecord
  */
 

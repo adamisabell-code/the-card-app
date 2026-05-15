@@ -4,6 +4,7 @@
  * @module
  */
 
+import { normalizeRoundFormat } from "./gameFormats.js";
 import { playerOnSide, pressAffectedPlayerIds } from "./scoring.js";
 
 const emptyStats = () => ({ initiated: 0, won: 0, lost: 0, holesWithPress: 0 });
@@ -45,7 +46,7 @@ export function aggregatePressStatsForBadges(holeRecords, allPlayerIds) {
 /**
  * @param {import('./types.js').GamePlayer[]} players
  * @param {import('./types.js').HoleRecord[]} holeRecords
- * @param {{ roundId?: string, moneyByPlayerId?: Record<string, number> | null }} [opts]
+ * @param {{ roundId?: string, moneyByPlayerId?: Record<string, number> | null, roundFormat?: import('./gameFormats.js').RoundFormatId }} [opts]
  * @returns {import('./types.js').RoundResult}
  */
 export function buildRoundResult(players, holeRecords, opts = {}) {
@@ -57,6 +58,7 @@ export function buildRoundResult(players, holeRecords, opts = {}) {
     holeRecords,
     pressStats: aggregatePressStatsForBadges(holeRecords, allIds),
     moneyByPlayerId: opts.moneyByPlayerId ?? null,
+    ...(opts.roundFormat != null ? { roundFormat: normalizeRoundFormat(opts.roundFormat) } : {}),
   };
 }
 

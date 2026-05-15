@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>BEAT THE WOLF — Tee Party</title>
+<meta name="theme-color" content="#000000">
+<meta property="og:title" content="BEAT THE WOLF">
+<meta property="og:description" content="3 taps. One shot. No excuses.">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: #000;
+    color: #00CFFF;
+    font-family: 'Courier New', Courier, monospace;
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 8px;
+  }
+  #app {
+    width: 100%;
+    max-width: 420px;
+    height: 100%;
+    max-height: 760px;
+    background: #000;
+    border: 2px solid #00CFFF;
+    box-shadow: 0 0 0 4px #000, 0 0 0 6px #00CFFF, 0 0 30px rgba(0,207,255,0.3);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .screen { position: absolute; inset: 0; display: none; flex-direction: column; padding: 16px; }
+  .screen.active { display: flex; }
+
+  #title {
+    align-items: center;
+    justify-content: space-between;
+    text-align: center;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(0,207,255,0.03) 3px, rgba(0,207,255,0.03) 4px), #000;
+  }
+  .title-top { padding-top: 20px; width: 100%; }
+  .wolf-art {
+    font-size: 11px; line-height: 1.1; color: #00CFFF;
+    text-shadow: 0 0 8px rgba(0,207,255,0.6);
+    white-space: pre; margin: 14px 0; letter-spacing: -1px;
+  }
+  h1.game-title {
+    font-size: 32px; font-weight: 900; letter-spacing: 2px; color: #00CFFF;
+    text-shadow: 2px 2px 0 #003344, 4px 4px 0 #001a22, 0 0 20px rgba(0,207,255,0.5);
+    line-height: 1; margin-top: 8px;
+  }
+  .by-line { color: #00CFFF; font-size: 11px; letter-spacing: 3px; margin-top: 8px; opacity: 0.7; }
+  .by-line .tp { color: #00CFFF; font-weight: bold; }
+  .subtext { color: #fff; font-size: 13px; letter-spacing: 1px; margin-top: 18px; opacity: 0.9; }
+  .btn-stack { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 0 20px 20px; }
+  .btn {
+    background: #000; color: #00CFFF; border: 2px solid #00CFFF; padding: 14px;
+    font-family: inherit; font-size: 16px; font-weight: bold; letter-spacing: 2px;
+    cursor: pointer; transition: transform 0.05s, background 0.1s;
+  }
+  .btn:active { transform: scale(0.97); background: #00CFFF; color: #000; }
+  .btn.primary { background: #00CFFF; color: #000; }
+  .btn.primary:active { background: #00a8d4; }
+  .leaderboard { width: 100%; padding: 0 20px; margin-bottom: 12px; }
+  .lb-title {
+    font-size: 10px; letter-spacing: 2px; color: #00CFFF; opacity: 0.7;
+    margin-bottom: 6px; text-align: left; border-bottom: 1px dashed #00CFFF; padding-bottom: 3px;
+  }
+  .lb-row { display: flex; justify-content: space-between; font-size: 11px; color: #fff; padding: 2px 0; letter-spacing: 1px; }
+  .lb-name { color: #00CFFF; } .lb-score { color: #fff; opacity: 0.85; }
+
+  #howto { align-items: center; justify-content: center; text-align: center; gap: 14px; }
+  #howto h2 { font-size: 22px; color: #00CFFF; letter-spacing: 3px; margin-bottom: 8px; }
+  .howto-steps { color: #fff; font-size: 13px; line-height: 1.8; letter-spacing: 1px; text-align: left; padding: 0 20px; }
+  .howto-steps .num { color: #00CFFF; font-weight: bold; display: inline-block; width: 20px; }
+
+  #game { padding: 0; background: #000; }
+  .hud {
+    background: #000; border-bottom: 2px solid #00CFFF; padding: 8px 12px;
+    display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 1px; color: #00CFFF;
+  }
+  .hud-val { color: #fff; }
+  #canvas-wrap { flex: 1; position: relative; background: #87CEEB; display: flex; align-items: center; justify-content: center; }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+    background: #87CEEB; display: block; width: 100%; height: 100%; cursor: pointer;
+  }
+  .hint {
+    background: #000; border-top: 2px solid #00CFFF; padding: 10px;
+    text-align: center; color: #fff; font-size: 12px; letter-spacing: 1px; min-height: 40px;
+  }
+  .hint b { color: #00CFFF; }
+
+  #receipt { align-items: center; justify-content: center; padding: 20px 12px; overflow-y: auto; }
+  .receipt-paper {
+    background: #000; border: 1px dashed #00CFFF; color: #fff; font-size: 12px;
+    line-height: 1.55; padding: 16px; width: 100%; max-width: 320px;
+    letter-spacing: 1px; white-space: pre; position: relative;
+  }
+  .receipt-paper::before, .receipt-paper::after {
+    content: ''; position: absolute; left: 0; right: 0; height: 8px;
+    background:
+      linear-gradient(45deg, transparent 33%, #000 33%, #000 66%, transparent 66%),
+      linear-gradient(-45deg, transparent 33%, #000 33%, #000 66%, transparent 66%);
+    background-size: 12px 8px; background-color: #00CFFF;
+  }
+  .receipt-paper::before { top: -8px; }
+  .receipt-paper::after { bottom: -8px; }
+  .receipt-buttons { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; width: 100%; max-width: 320px; }
+  .name-input {
+    background: #000; color: #00CFFF; border: 2px solid #00CFFF; padding: 10px;
+    font-family: inherit; font-size: 14px; letter-spacing: 2px; text-align: center;
+    text-transform: uppercase; width: 100%; max-width: 320px; margin-bottom: 12px;
+  }
+  .name-input:focus { outline: none; background: rgba(0,207,255,0.05); }
+  .toast {
+    position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: #00CFFF; color: #000; padding: 8px 16px; font-size: 12px;
+    font-weight: bold; letter-spacing: 1px; opacity: 0; pointer-events: none;
+    transition: opacity 0.2s; z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  @keyframes flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.98; } }
+  #app { animation: flicker 0.15s infinite; }
+  #app::after {
+    content: ''; position: absolute; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 3px);
+    pointer-events: none; z-index: 50;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="screen active" id="title">
+    <div class="title-top">
+      <div class="wolf-art" id="wolf-ascii"></div>
+      <h1 class="game-title">BEAT THE<br>WOLF</h1>
+      <div class="by-line">by <span class="tp">TEE PARTY</span></div>
+      <div class="subtext">3 taps. One shot. No excuses.</div>
+    </div>
+    <div class="leaderboard">
+      <div class="lb-title">★ TODAY'S BEST ★</div>
+      <div class="lb-row"><span class="lb-name">CHRIS</span><span class="lb-score">HOLE IN ONE</span></div>
+      <div class="lb-row"><span class="lb-name">MIKE</span><span class="lb-score">BIRDIE</span></div>
+      <div class="lb-row"><span class="lb-name">JAKE</span><span class="lb-score">BIRDIE</span></div>
+      <div class="lb-row"><span class="lb-name">SARAH</span><span class="lb-score">PAR</span></div>
+      <div class="lb-row"><span class="lb-name">DANNY</span><span class="lb-score">PAR</span></div>
+    </div>
+    <div class="btn-stack">
+      <button class="btn primary" onclick="goScreen('game'); startGame();">▶ PLAY</button>
+      <button class="btn" onclick="goScreen('howto');">HOW TO PLAY</button>
+    </div>
+  </div>
+
+  <div class="screen" id="howto">
+    <h2>HOW TO PLAY</h2>
+    <div class="howto-steps">
+      <div><span class="num">1.</span>TAP to start the power meter</div>
+      <div><span class="num">2.</span>TAP again to LOCK power</div>
+      <div><span class="num">3.</span>TAP again to LOCK accuracy</div>
+      <div style="margin-top:12px; color:#00CFFF;">SINK IT. BEAT THE WOLF.</div>
+    </div>
+    <button class="btn primary" style="margin-top:20px;" onclick="goScreen('title');">← BACK</button>
+  </div>
+
+  <div class="screen" id="game">
+    <div class="hud">
+      <span>WOLF SCORE: <span class="hud-val">PAR</span></span>
+      <span>YOUR SHOT: <span class="hud-val" id="shot-count">---</span></span>
+    </div>
+    <div id="canvas-wrap">
+      <canvas id="canvas" width="256" height="240"></canvas>
+    </div>
+    <div class="hint" id="hint">TAP to start power meter</div>
+  </div>
+
+  <div class="screen" id="receipt">
+    <input class="name-input" id="player-name" placeholder="YOUR NAME" maxlength="12" value="">
+    <div class="receipt-paper" id="receipt-content"></div>
+    <div class="receipt-buttons">
+      <button class="btn primary" onclick="playAgain();">▶ PLAY AGAIN</button>
+      <button class="btn" onclick="shareScore();">📋 SHARE SCORE</button>
+      <button class="btn" onclick="joinTeeParty();">🐺 JOIN TEE PARTY</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">COPIED!</div>
+</div>
+
+<script>
+function goScreen(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+document.getElementById('wolf-ascii').textContent =
+`     /\\___/\\
+    (  o o  )
+    /   ^   \\
+   ( \\__|__/ )
+    \\__/U\\__/`;
+
+const c = document.getElementById('canvas');
+const ctx = c.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const hint = document.getElementById('hint');
+const shotCountEl = document.getElementById('shot-count');
+
+// Daytime palette
+const SKY = '#87CEEB';
+const SKY_LIGHT = '#B8E1F0';
+const CLOUD = '#FFFFFF';
+const SUN = '#FFE066';
+const FAIRWAY_NEAR = '#3da832';
+const FAIRWAY_MID = '#5cc04a';
+const FAIRWAY_FAR = '#7dd368';
+const ROUGH_DARK = '#1f5e1a';
+const ROUGH = '#2a7a23';
+const TREE_DARK = '#0d3d0a';
+const TREE_MID = '#1a5414';
+const TREE_LIGHT = '#2d7a24';
+const GREEN_COLOR = '#b8f08a';
+const FLAG_CYAN = '#00CFFF';
+const POLE = '#FFFFFF';
+const SHIRT = '#00CFFF';
+const PANTS = '#1a1a1a';
+const SKIN = '#fcbcb0';
+const HAIR = '#3a2418';
+const SHOE = '#000000';
+const CLUB = '#cccccc';
+const BALL = '#FFFFFF';
+
+let phase = 'idle';
+let meter = 0;
+let dir = 1;
+let power = 0;
+let acc = 0;
+let shots = 0;
+let ball = { x: 128, z: 0, vx: 0, vz: 0, vy: 0, y: 0, inHole: false, settled: true };
+let flagSway = 0;
+let swingFrame = 0;
+let gameActive = false;
+let clouds = [];
+let trees = [];
+let wolfBlink = 0;
+
+const PIN_X = 128;
+const HORIZON_Y = 100;
+const TEE_Y = 215;
+const VANISH_X = 128;
+
+for(let i=0; i<3; i++){
+  clouds.push({x: Math.random()*256, y: 10 + Math.random()*25, w: 24 + Math.random()*16, speed: 0.05 + Math.random()*0.04});
+}
+
+for(let i = 0; i < 24; i++){
+  const z = 0.08 + (i / 24) * 0.92;
+  trees.push({ side: 'L', z: z, variant: i % 3 });
+  trees.push({ side: 'R', z: z, variant: (i+1) % 3 });
+}
+
+function px(x,y,w,h,col){
+  ctx.fillStyle = col;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+
+// cameraZ = camera's world position along fairway (0 = tee, ~0.92 = green)
+// cameraDir = 1 means facing toward green (z increasing), -1 means facing toward tee
+let cameraZ = 0;
+let targetCameraZ = 0;
+let cameraDir = 1;
+
+const VIEW_DEPTH = 1.0;
+const PIN_Z = 0.92;
+
+// Convert world-z to camera-relative perspective space [0..1]
+// When facing the green (dir=1): things ahead of camera have positive rel
+// When facing the tee (dir=-1): things behind camera (lower z) have positive rel
+function zRel(worldZ){
+  return ((worldZ - cameraZ) * cameraDir) / VIEW_DEPTH;
+}
+
+// Same logic for x: when camera turns around, left and right also swap
+function xRel(worldX){
+  // When facing forward (dir=1), world x maps directly.
+  // When facing backward (dir=-1), the x-axis flips.
+  return (worldX - 128) * cameraDir + 128;
+}
+
+function zToScreenY(z){
+  const rel = zRel(z);
+  if(rel < 0) return TEE_Y + 100; // behind camera
+  const eased = Math.pow(Math.min(1, rel), 0.7);
+  return TEE_Y - eased * (TEE_Y - HORIZON_Y);
+}
+function worldToScreen(x, z){
+  const sy = zToScreenY(z);
+  const rel = Math.max(0, Math.min(1, zRel(z)));
+  const scale = 1 - Math.pow(rel, 0.7) * 0.92;
+  const sx = VANISH_X + (xRel(x) - 128) * scale;
+  return { sx, sy, scale };
+}
+
+function drawSky(){
+  px(0, 0, 256, 30, SKY);
+  px(0, 30, 256, 30, SKY_LIGHT);
+  px(0, 60, 256, 40, SKY);
+
+  // Sun
+  const sunX = 30, sunY = 25;
+  px(sunX, sunY, 14, 14, SUN);
+  px(sunX-1, sunY+2, 1, 10, SUN);
+  px(sunX+14, sunY+2, 1, 10, SUN);
+  px(sunX+2, sunY-1, 10, 1, SUN);
+  px(sunX+2, sunY+14, 10, 1, SUN);
+
+  for(const cl of clouds){
+    cl.x += cl.speed;
+    if(cl.x > 280) cl.x = -30;
+    drawCloud(cl.x, cl.y, cl.w);
+  }
+}
+
+function drawCloud(x, y, w){
+  px(x, y, w, 4, CLOUD);
+  px(x+2, y-2, w-4, 2, CLOUD);
+  px(x+6, y-4, w-12, 2, CLOUD);
+  px(x+2, y+4, w-4, 2, CLOUD);
+}
+
+function drawGround(){
+  px(0, HORIZON_Y, 256, 4, ROUGH_DARK);
+
+  for(let y = HORIZON_Y; y < 240; y++){
+    const t = (y - HORIZON_Y) / (240 - HORIZON_Y);
+    const fairwayHalfW = 10 + t * 95;
+    const fairwayLeft = Math.round(VANISH_X - fairwayHalfW);
+    const fairwayRight = Math.round(VANISH_X + fairwayHalfW);
+
+    let roughCol;
+    if(t < 0.2) roughCol = TREE_DARK;
+    else if(t < 0.5) roughCol = ROUGH_DARK;
+    else roughCol = ROUGH;
+
+    let fairCol;
+    if(t < 0.2) fairCol = FAIRWAY_FAR;
+    else if(t < 0.5) fairCol = FAIRWAY_MID;
+    else fairCol = FAIRWAY_NEAR;
+
+    const stripe = Math.floor(y / 4) % 2 === 0;
+    if(stripe && t > 0.3) fairCol = (t < 0.5) ? FAIRWAY_FAR : FAIRWAY_MID;
+
+    px(0, y, fairwayLeft, 1, roughCol);
+    px(fairwayLeft, y, fairwayRight - fairwayLeft, 1, fairCol);
+    px(fairwayRight, y, 256 - fairwayRight, 1, roughCol);
+  }
+
+  // Green — natural perspective handles most of the scaling
+  const greenRel = Math.max(0, Math.min(1, zRel(0.92)));
+  const greenY = zToScreenY(0.92);
+  // Modest boost so green ellipse is recognizable when close
+  const greenScale = 1 + (1 - greenRel) * 1.2;
+  const greenW = Math.round(28 * greenScale);
+  const greenH = Math.max(4, Math.round(7 * greenScale));
+  for(let yy = -greenH/2 | 0; yy < greenH/2 + 1; yy++){
+    const tt = yy / (greenH/2);
+    const ww = Math.round(greenW * Math.sqrt(Math.max(0, 1 - tt*tt)));
+    px(VANISH_X - ww/2 | 0, greenY + yy, ww, 1, GREEN_COLOR);
+  }
+
+  // Hole
+  const holeW = Math.max(2, Math.round(2 * greenScale * 0.8));
+  px(VANISH_X - holeW/2 | 0, greenY, holeW, Math.max(1, holeW/2 | 0), '#000');
+
+  // Flag
+  const poleH = Math.max(10, Math.round(12 * greenScale * 0.9));
+  px(VANISH_X, greenY - poleH, Math.max(1, greenScale > 1.5 ? 2 : 1), poleH, POLE);
+  const swing = Math.sin(flagSway) > 0;
+  const flagY = greenY - poleH;
+  const flagW = Math.max(4, Math.round(6 * greenScale * 0.7));
+  const flagH = Math.max(3, Math.round(4 * greenScale * 0.7));
+  if(swing){
+    px(VANISH_X + 1, flagY, flagW, flagH, FLAG_CYAN);
+  } else {
+    px(VANISH_X + 1, flagY, flagW - 1, flagH, FLAG_CYAN);
+  }
+
+  // Tee markers (only visible when camera near start)
+  if(cameraZ < 0.05){
+    px(120, TEE_Y + 8, 2, 2, FLAG_CYAN);
+    px(134, TEE_Y + 8, 2, 2, FLAG_CYAN);
+  }
+}
+
+function drawTree(side, z, variant){
+  const rel = zRel(z);
+  if(rel < -0.02) return; // behind camera
+  if(rel > 1.1) return; // way past horizon
+  const t = (zToScreenY(z) - HORIZON_Y) / (240 - HORIZON_Y);
+  const fairwayHalfW = 10 + t * 95;
+  const offset = fairwayHalfW + 8 + (variant * 3);
+  // When camera flips, left becomes right
+  const effectiveSide = cameraDir === 1 ? side : (side === 'L' ? 'R' : 'L');
+  const screenX = effectiveSide === 'L' ? Math.round(VANISH_X - offset) : Math.round(VANISH_X + offset);
+  const baseY = zToScreenY(z);
+  const clampedRel = Math.max(0, Math.min(1, rel));
+  const scale = 1 - Math.pow(clampedRel, 0.7) * 0.85;
+  const trunkH = Math.max(2, Math.round(8 * scale));
+  const trunkW = Math.max(1, Math.round(2 * scale));
+  const crownH = Math.max(3, Math.round(14 * scale));
+  const crownW = Math.max(3, Math.round(12 * scale));
+
+  if(screenX < -crownW || screenX > 256 + crownW) return;
+
+  px(screenX - trunkW/2 | 0, baseY - trunkH, trunkW, trunkH, '#3a1f10');
+  const crownTop = baseY - trunkH - crownH;
+  for(let yy=0; yy<crownH; yy++){
+    const tt = yy / crownH;
+    const w = Math.round(crownW * (0.4 + 0.6 * Math.sin(tt * Math.PI)));
+    px(screenX - w/2 | 0, crownTop + yy, w, 1, TREE_DARK);
+  }
+  if(scale > 0.3){
+    for(let yy=2; yy<crownH-1; yy++){
+      const tt = yy / crownH;
+      const w = Math.max(1, Math.round(crownW * 0.5 * Math.sin(tt * Math.PI)));
+      px(screenX - w/2 | 0, crownTop + yy, w, 1, variant === 0 ? TREE_MID : TREE_LIGHT);
+    }
+  }
+}
+
+function drawTrees(){
+  const sorted = [...trees].sort((a,b) => b.z - a.z);
+  for(const t of sorted) drawTree(t.side, t.z, t.variant);
+}
+
+function drawWolfInWoods(){
+  // Wolf at z=0.5 — hide if behind camera or past horizon
+  const z = 0.5;
+  const rel = zRel(z);
+  if(rel < 0.02 || rel > 1.0) return;
+
+  const baseY = zToScreenY(z);
+  const t = (baseY - HORIZON_Y) / (240 - HORIZON_Y);
+  const fairwayHalfW = 10 + t * 95;
+  // Wolf is physically on the LEFT side. Camera flip swaps visual side.
+  const wolfOnRight = cameraDir === -1;
+
+  // Scale wolf based on distance — closer camera = bigger wolf
+  const clampedRel = Math.max(0, Math.min(1, rel));
+  const scale = 1 + (1 - clampedRel) * 1.5;
+  const s = Math.max(1, Math.round(scale));
+
+  // Wolf is in profile facing the fairway (toward the player's line of fire).
+  // When on left side, head points RIGHT. When on right side, head points LEFT (we mirror).
+  const facing = wolfOnRight ? -1 : 1; // 1 = head points right, -1 = head points left
+
+  // Sprite is roughly 14 wide × 10 tall at base scale (before legs).
+  // Anchor the BACK of the body to a known X so head pokes out toward fairway.
+  const spriteW = 14 * s;
+  const spriteH = 10 * s; // body + legs total
+  // Position: body sits at the edge of the rough, head poking toward fairway
+  const baseX = wolfOnRight
+    ? Math.round(VANISH_X + fairwayHalfW + 2)  // close to fairway edge on right
+    : Math.round(VANISH_X - fairwayHalfW - spriteW + 2 * s); // close to fairway edge on left
+  const groundY = baseY + 4; // feet planted near baseY
+
+  const DARK = '#0a1f08';
+
+  // Helper: draw a pixel at sprite-local (lx, ly), respecting facing.
+  // lx: 0 = back of wolf, grows toward head. ly: 0 = ground, grows upward.
+  function wp(lx, ly, w, h, col){
+    const actualLx = facing === 1 ? lx : (14 - lx - w);
+    // ly grows upward, so subtract (ly + h) * s from groundY to get top-left screen y
+    px(baseX + actualLx * s, groundY - (ly + h) * s, w * s, h * s, col);
+  }
+
+  // BODY (main horizontal block)
+  // Sits at y=4..7 in sprite local (4 tall)
+  wp(2, 4, 9, 3, DARK);
+
+  // BACK (slightly raised hump near shoulders)
+  wp(8, 3, 3, 1, DARK);
+
+  // CHEST/NECK (forward of body)
+  wp(10, 4, 2, 2, DARK);
+
+  // HEAD (forward of neck, slightly higher than body)
+  wp(11, 5, 3, 2, DARK);
+
+  // EARS (two pointed bits on top of head)
+  wp(11, 7, 1, 1, DARK);
+  wp(13, 7, 1, 1, DARK);
+
+  // SNOUT (poking out from head)
+  wp(13, 4, 1, 1, DARK);
+
+  // TAIL (sticking out behind, slightly down)
+  wp(0, 5, 2, 1, DARK);
+  wp(1, 6, 1, 1, DARK);
+
+  // FRONT LEGS (under chest, x≈9-10)
+  wp(9, 0, 1, 4, DARK);
+  wp(10, 0, 1, 4, DARK);
+
+  // BACK LEGS (under hindquarters, x≈3-4)
+  wp(3, 0, 1, 4, DARK);
+  wp(4, 0, 1, 4, DARK);
+
+  // EYE (glowing, on the head) — blink occasionally
+  if(wolfBlink < 90){
+    // Eye is just one pixel on the head, near the front
+    wp(12, 5, 1, 1, '#FFD700');
+  }
+}
+
+function drawGolfer(swing){
+  // Behind view, larger sprite
+  const x = 120;
+  const y = 180;
+
+  // Shadow
+  px(x + 2, y + 32, 14, 2, 'rgba(0,0,0,0.3)');
+
+  // Legs
+  px(x + 5, y + 22, 3, 10, PANTS);
+  px(x + 10, y + 22, 3, 10, PANTS);
+  // Shoes
+  px(x + 4, y + 31, 5, 2, SHOE);
+  px(x + 9, y + 31, 5, 2, SHOE);
+
+  // Body
+  px(x + 3, y + 10, 12, 13, SHIRT);
+  px(x + 3, y + 22, 12, 1, '#000');
+  px(x + 5, y + 10, 8, 1, '#0099bb');
+
+  // Head — back of head, hair
+  px(x + 5, y + 2, 8, 7, SKIN);
+  px(x + 4, y, 10, 5, HAIR);
+  px(x + 4, y + 5, 1, 3, HAIR);
+  px(x + 13, y + 5, 1, 3, HAIR);
+  // Cap
+  px(x + 4, y, 10, 3, SHIRT);
+  px(x + 4, y + 3, 10, 1, '#0099bb');
+
+  // Arms + club
+  if(swing === 0){
+    // Ready
+    px(x + 2, y + 11, 2, 8, SKIN);
+    px(x + 14, y + 11, 2, 8, SKIN);
+    for(let i = 0; i < 12; i++){
+      px(x + 8 + Math.round(i*0.2), y + 18 + i, 1, 1, CLUB);
+    }
+    px(x + 9, y + 30, 4, 2, CLUB);
+  } else if(swing === 1){
+    // Backswing
+    px(x + 2, y + 11, 2, 6, SKIN);
+    px(x + 14, y + 6, 2, 6, SKIN);
+    for(let i = 0; i < 14; i++){
+      px(x + 15 + i, y + 5 - i, 1, 1, CLUB);
+    }
+    px(x + 28, y - 10, 3, 3, CLUB);
+  } else {
+    // Follow through
+    px(x + 2, y + 6, 2, 6, SKIN);
+    px(x + 14, y + 11, 2, 6, SKIN);
+    for(let i = 0; i < 14; i++){
+      px(x + 1 - i, y + 5 - i, 1, 1, CLUB);
+    }
+    px(x - 14, y - 10, 3, 3, CLUB);
+  }
+}
+
+function drawBall(){
+  if(ball.inHole) return;
+
+  // Ball on tee — only when camera is at start
+  if(ball.z < 0.02 && ball.settled && cameraZ < 0.05){
+    px(127, 213, 2, 2, BALL);
+    return;
+  }
+
+  const { sx, sy } = worldToScreen(ball.x, ball.z);
+
+  // If ball is behind camera or way off, skip
+  if(zRel(ball.z) < -0.05) return;
+
+  const drawY = sy - ball.y;
+  // Ball gets bigger as it approaches camera
+  const rel = zRel(ball.z);
+  const sizeFactor = 0.5 + (1 - Math.max(0, Math.min(1, rel))) * 0.5;
+  const size = Math.max(2, Math.round(3 * sizeFactor));
+
+  px(Math.round(sx - size/2), Math.round(drawY - size/2), size, size, BALL);
+
+  if(ball.y > 1){
+    const shadowSize = Math.max(1, size - 1);
+    px(Math.round(sx - shadowSize/2), Math.round(sy), shadowSize, 1, 'rgba(0,0,0,0.35)');
+  }
+}
+
+function drawPowerMeter(){
+  if(phase !== 'power' && phase !== 'accuracy' && phase !== 'swing') return;
+  const bw = 110, bh = 8;
+  const bx = (256 - bw) / 2;
+  const by = 222;
+  px(bx-3, by-3, bw+6, bh+12, '#000');
+  px(bx-2, by-2, bw+4, bh+10, '#00CFFF');
+  px(bx, by, bw, bh, '#000');
+
+  if(phase === 'power'){
+    const fillW = Math.round(bw * meter);
+    for(let i=0; i<fillW; i++){
+      let col = '#3da832';
+      if(i > bw*0.7) col = '#ff3333';
+      else if(i > bw*0.4) col = '#ffcc00';
+      px(bx+i, by, 1, bh, col);
+    }
+  } else {
+    const fillW = Math.round(bw * power);
+    for(let i=0; i<fillW; i++){
+      let col = '#3da832';
+      if(i > bw*0.7) col = '#ff3333';
+      else if(i > bw*0.4) col = '#ffcc00';
+      px(bx+i, by, 1, bh, col);
+    }
+    const center = bx + bw/2;
+    px(bx, by+bh+1, bw, 3, '#222');
+    px(center, by+bh+1, 1, 3, '#fff');
+    if(phase === 'accuracy'){
+      const ax = bx + bw/2 + Math.round(meter * bw/2);
+      px(ax-1, by+bh, 3, 5, '#00CFFF');
+    } else {
+      const ax = bx + bw/2 + Math.round(acc * bw/2);
+      px(ax-1, by+bh, 3, 5, '#ffcc00');
+    }
+  }
+}
+
+function startGame(){
+  ball.x = 128; ball.z = 0; ball.vx = 0; ball.vz = 0; ball.vy = 0; ball.y = 0;
+  ball.inHole = false; ball.settled = true;
+  shots = 0;
+  phase = 'idle';
+  swingFrame = 0;
+  gameActive = true;
+  cameraZ = 0;
+  targetCameraZ = 0;
+  cameraDir = 1;
+  shotCountEl.textContent = '---';
+  hint.innerHTML = 'TAP to start power meter';
+}
+
+function action(){
+  if(!gameActive) return;
+  if(phase === 'idle'){
+    if(ball.inHole) return;
+    phase = 'power'; meter = 0; dir = 1;
+    hint.innerHTML = 'TAP to <b>LOCK POWER</b>';
+  } else if(phase === 'power'){
+    power = meter;
+    phase = 'accuracy'; meter = 0; dir = 1;
+    hint.innerHTML = 'TAP to <b>LOCK ACCURACY</b>';
+  } else if(phase === 'accuracy'){
+    acc = meter;
+    phase = 'swing';
+    swingFrame = 0;
+    hint.innerHTML = 'SWINGING...';
+  }
+}
+
+c.addEventListener('click', action);
+c.addEventListener('touchstart', e => { e.preventDefault(); action(); }, {passive:false});
+document.addEventListener('keydown', e => {
+  if((e.code === 'Space' || e.code === 'Enter') && gameActive){
+    e.preventDefault();
+    action();
+  }
+});
+
+function update(){
+  flagSway += 0.15;
+  wolfBlink = (wolfBlink + 1) % 100;
+
+  if(phase === 'power'){
+    meter += dir * 0.025;
+    if(meter >= 1){ meter = 1; dir = -1; }
+    if(meter <= 0){ meter = 0; dir = 1; }
+  } else if(phase === 'accuracy'){
+    meter += dir * 0.045;
+    if(meter >= 1){ meter = 1; dir = -1; }
+    if(meter <= -1){ meter = -1; dir = 1; }
+  } else if(phase === 'swing'){
+    swingFrame++;
+    if(swingFrame === 18){
+      shots++;
+      shotCountEl.textContent = shots;
+      // Distance to pin determines if this is a putt-range shot
+      const distToPin = Math.abs(ball.z - PIN_Z);
+      const isPutt = distToPin < 0.12;
+      // Ball flies toward the pin — vz takes camera direction
+      if(isPutt){
+        ball.vz = (0.002 + power * 0.012) * cameraDir;
+        ball.vy = 0.3;
+        ball.vx = acc * 0.3 * cameraDir;
+      } else {
+        ball.vz = (0.010 + power * 0.026) * cameraDir;
+        ball.vy = 1.4 + power * 1.8;
+        ball.vx = acc * 0.7 * cameraDir;
+      }
+      ball.settled = false;
+      phase = 'fly';
+      hint.innerHTML = isPutt ? 'PUTTING...' : 'FLYING...';
+    }
+  } else if(phase === 'fly'){
+    ball.z += ball.vz;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+    ball.vy -= 0.22;
+    ball.vz *= 0.998;
+    ball.vx *= 0.99;
+
+    if(ball.y <= 0 && ball.vy < 0){
+      ball.y = 0;
+
+      if(ball.z >= 0.88){
+        const dx = ball.x - PIN_X;
+        const speed = Math.abs(ball.vz) + Math.abs(ball.vx);
+        // Two ways to hole out:
+        // 1. Drive: thread-the-needle landing at the pin
+        // 2. Putt: rolling slowly past the pin
+        const droppedInOnDrive = Math.abs(dx) < 2 && speed < 0.025 && ball.z >= 0.90 && ball.z <= 0.95;
+        const rolledIn = Math.abs(dx) < 4 && speed < 0.008 && ball.z >= 0.89 && ball.z <= 0.95;
+        if(droppedInOnDrive || rolledIn){
+          ball.inHole = true;
+          endShot();
+          return;
+        } else if(Math.abs(dx) < 22){
+          if(Math.abs(ball.vz) > 0.005 || Math.abs(ball.vx) > 0.3){
+            ball.vy = Math.abs(ball.vz) * 6;
+            ball.vz *= 0.3;
+            ball.vx *= 0.3;
+          } else {
+            ball.vz = 0; ball.vx = 0; ball.vy = 0;
+            phase = 'idle';
+            ball.settled = true;
+            placeCameraBehindBall();
+            hint.innerHTML = 'CLOSE! TAP to putt';
+          }
+        } else {
+          ball.vz = 0; ball.vx = 0; ball.vy = 0;
+          phase = 'idle';
+          ball.settled = true;
+          placeCameraBehindBall();
+          if(ball.z > PIN_Z){
+            hint.innerHTML = 'OVERSHOT! TAP to chip back';
+          } else {
+            hint.innerHTML = 'WIDE! TAP to swing';
+          }
+        }
+      } else {
+        const t = (zToScreenY(ball.z) - HORIZON_Y) / (240 - HORIZON_Y);
+        const fairwayHalfW = (10 + t * 95) * 0.9;
+        const ballOffsetFromCenter = Math.abs(ball.x - 128);
+        const offFairway = ballOffsetFromCenter > fairwayHalfW * 1.3;
+
+        if(offFairway){
+          ball.vz = 0; ball.vx = 0; ball.vy = 0;
+          phase = 'idle';
+          ball.settled = true;
+          placeCameraBehindBall();
+          hint.innerHTML = 'IN THE TREES! TAP to swing';
+        } else if(Math.abs(ball.vz) > 0.008){
+          ball.vy = Math.abs(ball.vz) * 4;
+          ball.vz *= 0.55;
+          ball.vx *= 0.7;
+        } else {
+          ball.vz = 0; ball.vx = 0; ball.vy = 0;
+          phase = 'idle';
+          ball.settled = true;
+          placeCameraBehindBall();
+          hint.innerHTML = 'TAP to swing again';
+        }
+      }
+    }
+
+    if(ball.z > 1.05 || ball.x < -20 || ball.x > 276){
+      ball.vz = 0; ball.vx = 0; ball.vy = 0; ball.y = 0;
+      ball.z = 1.0;
+      ball.x = 128;
+      phase = 'idle';
+      ball.settled = true;
+      placeCameraBehindBall();
+      hint.innerHTML = 'OVERSHOT! TAP to chip back';
+    }
+  }
+
+  cameraZ += (targetCameraZ - cameraZ) * 0.08;
+}
+
+// Position camera so it's right behind the ball, always facing the pin.
+// If ball is before the pin → face toward green (dir=1), camera just behind ball.
+// If ball is past the pin → face back toward tee (dir=-1), camera just past ball.
+function placeCameraBehindBall(){
+  if(ball.z <= PIN_Z){
+    cameraDir = 1;
+    targetCameraZ = Math.max(0, ball.z - 0.02);
+  } else {
+    cameraDir = -1;
+    targetCameraZ = Math.min(1.05, ball.z + 0.02);
+  }
+}
+
+function endShot(){
+  gameActive = false;
+  let result, status, scoreNum;
+  if(shots === 1){ result = 'HOLE IN ONE'; status = 'BULLY THE WOLF'; scoreNum = 100; }
+  else if(shots === 2){ result = 'BIRDIE'; status = 'WOLF IS SHAKING'; scoreNum = 87; }
+  else if(shots === 3){ result = 'PAR'; status = 'YOU SURVIVED'; scoreNum = 65; }
+  else if(shots === 4){ result = 'BOGEY'; status = 'THE WOLF SMELLS BLOOD'; scoreNum = 42; }
+  else { result = 'DOUBLE+'; status = 'THE WOLF ATE YOU'; scoreNum = 18; }
+
+  scoreNum += Math.floor(Math.random() * 8) - 3;
+  if(scoreNum < 1) scoreNum = 1;
+  if(scoreNum > 100) scoreNum = 100;
+
+  window.__lastResult = { result, status, scoreNum, shots };
+
+  setTimeout(() => {
+    renderReceipt();
+    goScreen('receipt');
+  }, 1000);
+}
+
+function draw(){
+  drawSky();
+  drawGround();
+  drawTrees();
+  drawWolfInWoods();
+
+  let sw = 0;
+  if(phase === 'swing'){
+    if(swingFrame < 9) sw = 1;
+    else if(swingFrame < 16) sw = 1;
+    else sw = 2;
+  } else if(phase === 'fly') sw = 2;
+
+  // Draw golfer only at the tee (first shot, camera not yet moved)
+  if(cameraZ < 0.05 && ball.z < 0.05){
+    drawGolfer(sw);
+  }
+
+  drawBall();
+  drawPowerMeter();
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+
+setInterval(() => {
+  if(gameActive && shots >= 5 && phase === 'idle' && !ball.inHole){
+    endShot();
+  }
+}, 500);
+
+function renderReceipt(){
+  const r = window.__lastResult || { result: 'PAR', status: 'YOU SURVIVED', scoreNum: 65, shots: 3 };
+  const nameInput = document.getElementById('player-name');
+  let name = (nameInput.value || 'PLAYER').toUpperCase().slice(0,12);
+
+  const dateStr = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}).toUpperCase();
+  const timeStr = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+  const orderNum = '#' + Math.floor(Math.random() * 9000 + 1000);
+
+  const content =
+`====================
+   TEE PARTY GOLF
+   BEAT THE WOLF
+====================
+
+${dateStr}        ${timeStr}
+ORDER ${orderNum}
+
+--------------------
+PLAYER: ${name}
+SHOTS:  ${r.shots}
+--------------------
+
+RESULT: ${r.result}
+STATUS: ${r.status}
+
+SHOT SCORE: ${r.scoreNum}/100
+
+====================
+  THX FOR PLAYING
+ austinteeparty.com
+====================`;
+  document.getElementById('receipt-content').textContent = content;
+  nameInput.oninput = () => renderReceipt();
+}
+
+function playAgain(){
+  goScreen('game');
+  startGame();
+}
+
+function shareScore(){
+  const r = window.__lastResult || {};
+  const text = `I just beat the wolf 🐺 (${r.result || 'PAR'})\nCan you?\naustinteeparty.com`;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(showToast).catch(()=>fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); showToast(); } catch(e){}
+  document.body.removeChild(ta);
+}
+function showToast(){
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+function joinTeeParty(){
+  window.open('https://austinteeparty.com', '_blank');
+}
+
+document.addEventListener('dblclick', e => e.preventDefault());
+</script>
+</body>
+</html>

@@ -1,4 +1,6 @@
 ﻿import { aggregateWolfRoundStats } from "../../game/scoring.js";
+import { aggregateStrokeGrossTotals, pickStrokeReceiptHeadline } from "../../game/strokeScoring.js";
+import { formatReceiptLine, GAME_FORMATS, normalizeRoundFormat, pickReceiptExampleHeadline } from "../../game/gameFormats.js";
 import { computeRoundPayout } from "../../game/stakes.js";
 import { determineReceiptType } from "../logic/receiptTypeLogic.js";
 import { determineFaceMood } from "../logic/faceMoodLogic.js";
@@ -16,6 +18,7 @@ import { resolveReceiptProfileImage } from "./receiptProfileImageResolver.js";
  *  stakesConfig: import('../../game/stakes.js').StakesConfig,
  *  portraitByPlayerId: Record<string, import('../../portrait/types.js').PortraitBundle | null | undefined>,
  *  receiptNumber?: string,
+ *  roundFormat?: import('../../game/gameFormats.js').RoundFormatId
  * }} params
  */
 export async function generateEndRoundReceiptForPlayer(params) {
@@ -25,6 +28,9 @@ export async function generateEndRoundReceiptForPlayer(params) {
   const stats = aggregateWolfRoundStats(params.holeRecords, allIds);
   const moneyBy = computeRoundPayout(params.holeRecords, params.gamePlayers, params.stakesConfig);
   const moneyRaw = moneyBy[p0.id] ?? 0;
+  const roundFmt = normalizeRoundFormat(params.roundFormat);
+  const strokeTotals = roundFmt === "stroke" ? aggregateStrokeGrossTotals(params.holeRecords) : null;
+  const p0StrokeGross = strokeTotals ? strokeTotals[p0.id] ?? 0 : null;
 
   const profileStats = {
     money: moneyRaw,
@@ -57,14 +63,22 @@ export async function generateEndRoundReceiptForPlayer(params) {
     playerName: p0.name,
   });
 
+  const wolfStatsLine =
+    roundFmt === "wolf"
+      ? undefined
+      : roundFmt === "stroke" && p0StrokeGross != null
+        ? `Stroke play · gross ${p0StrokeGross}`
+        : `${roundFmt.toUpperCase()} scoring: next pass · shell receipt (Wolf pts ${stats.wolfPointsByPlayerId[p0.id] ?? 0})`;
+
   const roundStats = {
     moneyRaw,
     points: stats.wolfPointsByPlayerId[p0.id] ?? 0,
     holesWon: stats.holesWonByPlayerId[p0.id] ?? 0,
     record: `${stats.holesWonByPlayerId[p0.id] ?? 0}-${Math.max(0, params.holeRecords.length - (stats.holesWonByPlayerId[p0.id] ?? 0))}`,
-    scoreVsPar: "N/A",
+    scoreVsPar: roundFmt === "stroke" && p0StrokeGross != null ? String(p0StrokeGross) : "N/A",
     blindWolf: `${stats.blindWolfWins}/${stats.blindWolfAttempts}`,
     loneWolf: `${stats.loneWolfWins}/${stats.loneWolfAttempts}`,
+    wolfStatsLine,
     badge: receiptType,
   };
 
@@ -75,12 +89,28 @@ export async function generateEndRoundReceiptForPlayer(params) {
   });
   receiptLog("AI copy generated or fallback used", { source: receiptCopy.source });
 
+  const receiptCopyForTemplate =
+    roundFmt === "wolf"
+      ? receiptCopy
+      : roundFmt === "stroke" && p0StrokeGross != null
+        ? {
+            ...receiptCopy,
+            headline: pickStrokeReceiptHeadline(p0.id, p0StrokeGross),
+            subheadline: "LOWEST NUMBER WINS. GROSS ON THE CARD.",
+          }
+        : {
+            ...receiptCopy,
+            headline: pickReceiptExampleHeadline(roundFmt, p0.id),
+            subheadline: GAME_FORMATS[roundFmt].description.toUpperCase(),
+          };
+
   const template = buildEndRoundReceiptTemplate({
     playerName: p0.name,
     receiptType,
     receiptNumber: params.receiptNumber,
     roundStats,
-    receiptCopy,
+    receiptCopy: receiptCopyForTemplate,
+    formatReceiptLabel: formatReceiptLine(roundFmt),
   });
 
   const exported = await exportReceiptPng({

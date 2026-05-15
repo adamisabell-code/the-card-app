@@ -2,42 +2,28 @@ import { useCallback, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import { ReceiptCard } from "./ReceiptCard.jsx";
 import { initialsFromName } from "../portrait/types.js";
+import { formatReceiptLine, GAME_FORMATS, normalizeRoundFormat } from "../game/gameFormats.js";
 
 /**
  * @param {{
  *   recap: { finalStandings: object, bestMoment: object, worstBeat: object, groupRecap: object } | null
+ *   recapSessionKey?: number
+ *   receiptContext?: unknown
+ *   roundId?: string | null
+ *   formatId?: import('../game/gameFormats.js').RoundFormatId
  *   onDone: () => void
  *   themeId?: string
  * }} props
  */
-export function RoundRecapScreen({ recap, onDone, themeId = "default-dark" }) {
-  if (!recap) return null;
+export function RoundRecapScreen({ recap, onDone, themeId = "default-dark", formatId = "wolf" }) {
+  const fmt = normalizeRoundFormat(formatId);
+  const formatMeta = GAME_FORMATS[fmt];
   const [shareStatus, setShareStatus] = useState("");
   const [isSharing, setIsSharing] = useState(false);
   const [isSavingImage, setIsSavingImage] = useState(false);
   const [capturePulse, setCapturePulse] = useState(false);
   const scrollRef = useRef(null);
   const pulseTimerRef = useRef(null);
-
-  const { finalStandings, bestMoment, worstBeat, groupRecap } = recap;
-
-  const block = (label, props) => (
-    <div className="round-recap__block">
-      <h3 className="round-recap__eyebrow">{label}</h3>
-      <ReceiptCard
-        playerName={props.playerName}
-        amountLabel={props.amountLabel}
-        stamp={props.stamp}
-        badges={props.badges}
-        portraitBundle={props.portraitBundle}
-        portraitDisplayMode={props.portraitDisplayMode}
-        layout="default"
-        initials={initialsFromName(props.playerName)}
-        aiFlavorText={props.aiFlavorText ?? null}
-        themeId={themeId}
-      />
-    </div>
-  );
 
   const prepareCaptureMoment = useCallback(async () => {
     if (scrollRef.current) {
@@ -62,8 +48,8 @@ export function RoundRecapScreen({ recap, onDone, themeId = "default-dark" }) {
       }
       await prepareCaptureMoment();
       const shareUrl = window.location.href;
-      const title = "Tee Party Results";
-      const text = "Receipts don’t lie. Look what just happened.";
+      const title = "The Card — round results";
+      const text = "Receipts don't lie. Look what just happened.";
       if (navigator.share) {
         await navigator.share({ title, text, url: shareUrl });
       } else {
@@ -106,10 +92,34 @@ export function RoundRecapScreen({ recap, onDone, themeId = "default-dark" }) {
     }
   }, [isSavingImage, prepareCaptureMoment]);
 
+  if (!recap) return null;
+
+  const { finalStandings, bestMoment, worstBeat, groupRecap } = recap;
+
+  const block = (label, props) => (
+    <div className="round-recap__block">
+      <h3 className="round-recap__eyebrow">{label}</h3>
+      <ReceiptCard
+        playerName={props.playerName}
+        amountLabel={props.amountLabel}
+        stamp={props.stamp}
+        badges={props.badges}
+        portraitBundle={props.portraitBundle}
+        portraitDisplayMode={props.portraitDisplayMode}
+        layout="default"
+        initials={initialsFromName(props.playerName)}
+        aiFlavorText={props.aiFlavorText ?? null}
+        themeId={themeId}
+      />
+    </div>
+  );
+
   return (
     <div className="round-recap round-recap--in-shell">
       <header className="round-recap__head">
         <h1 className="round-recap__title">End of round</h1>
+        <p className="round-recap__format-line">{formatReceiptLine(fmt)}</p>
+        <p className="round-recap__format-sub">{formatMeta.description}</p>
         <p className="round-recap__lede">Final receipts — standings, best beat, worst beat, group stamp.</p>
       </header>
       <div

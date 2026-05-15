@@ -46,6 +46,7 @@ function previewSpaFallback() {
 
 // https://vite.dev/config/
 export default defineConfig({
+  publicDir: "public",
   plugins: [react(), previewSpaFallback()],
   server: {
     proxy: {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildRecapShareCards, enrichFullRoundHistory } from "./roundRecap.js";
 import { buildHoleQuickConfirm } from "./holeReceiptPreview.js";
 import { computePointsAwarded, winningPlayerIdsForRecord } from "./scoring.js";
+import { buildStrokeHoleRecord } from "./strokeScoring.js";
 
 const IDS = ["p-0", "p-1", "p-2", "p-3"];
 const players = [
@@ -90,5 +91,45 @@ describe("roundRecap", () => {
       players,
     );
     expect(q.line1.length).toBeLessThan(40);
+  });
+
+  it("buildRecapShareCards stroke recap uses gross totals", () => {
+    const strokeHoles = [];
+    for (let i = 1; i <= 18; i++) {
+      strokeHoles.push(buildStrokeHoleRecord(i, { "p-0": 5, "p-1": 4, "p-2": 5, "p-3": 6 }, 4, IDS));
+    }
+    const { finalStandings, groupRecap } = buildRecapShareCards(strokeHoles, players, {}, undefined, "stroke");
+    expect(finalStandings.stamp).toBe("FINAL STANDINGS");
+    expect(finalStandings.playerName).toContain("B");
+    expect(finalStandings.playerName).toContain("72");
+    expect(groupRecap.badges[0]).toBe("FORMAT: STROKE PLAY");
+  });
+
+  it("stroke group recap does not label a co-leader as runner-up", () => {
+    const strokeHoles = [];
+    for (let i = 1; i <= 18; i++) {
+      strokeHoles.push(buildStrokeHoleRecord(i, { "p-0": 4, "p-1": 4, "p-2": 5, "p-3": 6 }, 4, IDS));
+    }
+    const { groupRecap } = buildRecapShareCards(strokeHoles, players, {}, undefined, "stroke");
+    expect(groupRecap.badges.some((b) => b === "Runner-up · C (90)")).toBe(true);
+    expect(groupRecap.badges.some((b) => b.includes("Runner-up · B"))).toBe(false);
+  });
+
+  it("stroke group recap when all tied gross shows no runner-up line", () => {
+    const strokeHoles = [];
+    for (let i = 1; i <= 18; i++) {
+      strokeHoles.push(buildStrokeHoleRecord(i, { "p-0": 5, "p-1": 5, "p-2": 5, "p-3": 5 }, 4, IDS));
+    }
+    const { groupRecap } = buildRecapShareCards(strokeHoles, players, {}, undefined, "stroke");
+    expect(groupRecap.badges.some((b) => b.includes("No runner-up"))).toBe(true);
+  });
+
+  it("stroke group recap uses Next when two players tie for second place gross", () => {
+    const strokeHoles = [];
+    for (let i = 1; i <= 18; i++) {
+      strokeHoles.push(buildStrokeHoleRecord(i, { "p-0": 4, "p-1": 5, "p-2": 5, "p-3": 7 }, 4, IDS));
+    }
+    const { groupRecap } = buildRecapShareCards(strokeHoles, players, {}, undefined, "stroke");
+    expect(groupRecap.badges.some((b) => b === "Next · B · C (90)")).toBe(true);
   });
 });

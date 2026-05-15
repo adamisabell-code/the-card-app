@@ -6,6 +6,7 @@
 import { buildRoundResult, suggestPressBadgeHints } from "../game/roundResult.js";
 import { computeReceiptPresentation } from "../../receipts/receiptEngine.ts";
 import { buildStakeCallouts, computeRoundPayout, formatStakeAmount } from "../game/stakes.js";
+import { formatReceiptLine, normalizeRoundFormat } from "../game/gameFormats.js";
 
 const HAS_RECEIPT_KEY = "the-card-has-receipt-v1";
 const SNAPSHOT_KEY = "the-card-last-receipt-snapshot-v1";
@@ -110,6 +111,7 @@ export function getReturningReceiptRoutingDebug() {
  *   receiptType?: string | null
  *   aiFlavorText?: string | null
  *   snapshotSource?: 'live-round' | 'settings-demo'
+ *   formatReceiptLabel?: string | null
  * }} LastReceiptSnapshot
  */
 
@@ -143,6 +145,7 @@ export function loadLastReceiptSnapshot() {
       portraitHeroMode: typeof o.portraitHeroMode === "string" ? o.portraitHeroMode : null,
       receiptType: typeof o.receiptType === "string" ? o.receiptType : null,
       aiFlavorText: typeof o.aiFlavorText === "string" ? o.aiFlavorText : null,
+      formatReceiptLabel: typeof o.formatReceiptLabel === "string" ? o.formatReceiptLabel : null,
       ...(snapshotSource ? { snapshotSource } : {}),
     };
   } catch {
@@ -154,11 +157,13 @@ export function loadLastReceiptSnapshot() {
  * @param {import('../game/types.js').GamePlayer[]} gamePlayers
  * @param {import('../game/types.js').HoleRecord[]} holeRecords
  * @param {import('../game/stakes.js').StakesConfig} [stakesConfig]
+ * @param {import('../game/gameFormats.js').RoundFormatId} [roundFormat]
  * @returns {LastReceiptSnapshot}
  */
-export function buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig) {
+export function buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig, roundFormat = "wolf") {
   const p0 = gamePlayers.find((p) => p.id === "p-0") ?? gamePlayers[0];
   const playerName = p0?.name?.trim() || "Player 1";
+  const fmt = normalizeRoundFormat(roundFormat);
 
   const stakes = stakesConfig ?? {
     preset: 2,
@@ -168,7 +173,7 @@ export function buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig)
     hideDollarAmounts: false,
   };
   const moneyByPlayerId = computeRoundPayout(holeRecords, gamePlayers, stakes);
-  const rr = buildRoundResult(gamePlayers, holeRecords, { moneyByPlayerId });
+  const rr = buildRoundResult(gamePlayers, holeRecords, { moneyByPlayerId, roundFormat: fmt });
   const pres = computeReceiptPresentation(rr, p0.id);
   const hints = suggestPressBadgeHints(rr);
   const titleCase = (s) => s.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -189,5 +194,6 @@ export function buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig)
     portraitHeroMode: pres.portraitHeroMode,
     receiptType: pres.receiptType,
     aiFlavorText: null,
+    formatReceiptLabel: formatReceiptLine(fmt),
   };
 }

@@ -6,6 +6,9 @@ import { PortraitSetupFlow } from "./components/PortraitSetupFlow.jsx";
 import { PlayerAvatar } from "./components/PlayerAvatar.jsx";
 import { RoundRecapScreen } from "./components/RoundRecapScreen.jsx";
 import { WolfRoundScreen } from "./components/WolfRoundScreen.jsx";
+import { PickGameFormatScreen } from "./components/PickGameFormatScreen.jsx";
+import { PlaceholderFormatRoundScreen } from "./components/PlaceholderFormatRoundScreen.jsx";
+import { StrokePlayRoundScreen } from "./components/StrokePlayRoundScreen.jsx";
 import { ReceiptThemePicker } from "./components/ReceiptThemePicker.jsx";
 import { initialsFromName } from "./portrait/types.js";
 import { revokePortraitBundle } from "./portrait/pipeline.js";
@@ -19,6 +22,9 @@ import { computeRoundEloUpdate } from "./game/elo.js";
 import { buildRecapShareCards, persistRoundHistoryToSession } from "./game/roundRecap.js";
 import { buildRoundResult } from "./game/roundResult.js";
 import { aggregateWolfRoundStats } from "./game/scoring.js";
+import { buildFormatPlaceholderHoleRecords } from "./game/placeholderRoundHoles.js";
+import { GAME_FORMATS, normalizeRoundFormat } from "./game/gameFormats.js";
+import { aggregateStrokeGrossTotals, rankStrokeGrossAscending, strokeVictoryMargin } from "./game/strokeScoring.js";
 import {
   hydrateBundleFromPersistedRecord,
   loadPersistedPortraitProfile,
@@ -101,21 +107,21 @@ const NAV_TABS = [
   { id: "settings", label: "Settings", icon: "settings" },
 ];
 
-/** Placeholder league rows â€” not tied to round scoring or backend. */
+/** Placeholder league rows — not tied to round scoring or backend. */
 const DEMO_CITY_LEADERBOARD_ROWS = [
-  { name: "Jordan K.", city: "Austin, TX", points: 842, badge: "Wolf Killer" },
+  { name: "Jordan K.", city: "Austin, TX", points: 842, badge: "Table boss" },
   { name: "Sam R.", city: "Austin, TX", points: 791, badge: "Press Merchant" },
   { name: "Riley M.", city: "Austin, TX", points: 764, badge: "Took Everything" },
   { name: "Casey T.", city: "Round Rock, TX", points: 718 },
-  { name: "Drew L.", city: "Austin, TX", points: 702, badge: "Wolf Killer" },
+  { name: "Drew L.", city: "Austin, TX", points: 702, badge: "Closer" },
   { name: "Alex P.", city: "Cedar Park, TX", points: 689 },
 ];
 
 const DEMO_NATIONAL_LEADERBOARD_ROWS = [
   { name: "Morgan V.", city: "Portland, OR", points: 1204, badge: "Took Everything" },
-  { name: "Reese Q.", city: "Chicago, IL", points: 1188, badge: "Wolf Killer" },
+  { name: "Reese Q.", city: "Chicago, IL", points: 1188, badge: "Closer" },
   { name: "Taylor J.", city: "Dallas, TX", points: 1142, badge: "Press Merchant" },
-  { name: "Jordan K.", city: "Austin, TX", points: 1120, badge: "Wolf Killer" },
+  { name: "Jordan K.", city: "Austin, TX", points: 1120, badge: "Table boss" },
   { name: "Jamie F.", city: "Atlanta, GA", points: 1096 },
   { name: "Sky B.", city: "Denver, CO", points: 1071, badge: "Press Merchant" },
 ];
@@ -136,7 +142,7 @@ const RENDERED_RECEIPT_IMAGE_KEY = "the-card-rendered-receipt-image-v1";
 const DEMO_TEST_ROUND = {
   courseName: "Demo Country Club",
   teeName: "White Tees",
-  format: "Wolf",
+  roundFormat: "wolf",
   stakes: {
     buyIn: 20,
     sideBetsEnabled: true,
@@ -319,18 +325,47 @@ function ReceiptFlavorDebugStrip() {
 }
 
 function roundSummaryForList(round) {
+  const fmt = normalizeRoundFormat(round.roundFormat);
   const ids = round.players.map((p) => p.id);
+  if (fmt === "stroke") {
+    const totals = aggregateStrokeGrossTotals(round.holeRecords);
+    const ranked = rankStrokeGrossAscending(round.players, totals);
+    const leader = ranked[0];
+    const margin = strokeVictoryMargin(ranked);
+    const co = ranked.filter((p) => p.gross === leader.gross);
+    const winnerName = co.length > 1 ? co.map((p) => p.name).join(" · ") : leader.name;
+    return {
+      winnerName,
+      topPts: leader.gross,
+      spread: margin,
+      holeCount: round.holeRecords.length,
+      scoreLine:
+        co.length > 1
+          ? `Tied at ${leader.gross} gross · ${round.holeRecords.length} holes`
+          : `Winner ${leader.gross} gross · margin ${margin} stroke${margin === 1 ? "" : "s"}`,
+    };
+  }
   const stats = aggregateWolfRoundStats(round.holeRecords, ids);
   const sorted = [...round.players]
     .map((p) => ({ ...p, wpts: stats.wolfPointsByPlayerId[p.id] ?? 0 }))
     .sort((a, b) => b.wpts - a.wpts || a.slotIndex - b.slotIndex);
   const top = sorted[0];
   const bottom = sorted[sorted.length - 1];
+  if (fmt !== "wolf") {
+    return {
+      winnerName: top?.name ?? "—",
+      topPts: top?.wpts ?? 0,
+      spread: (top?.wpts ?? 0) - (bottom?.wpts ?? 0),
+      holeCount: round.holeRecords.length,
+      scoreLine: `${GAME_FORMATS[fmt].shortLabel} · receipt shell (full scoring soon)`,
+    };
+  }
   return {
     winnerName: top?.name ?? "â€”",
     topPts: top?.wpts ?? 0,
     spread: (top?.wpts ?? 0) - (bottom?.wpts ?? 0),
     holeCount: round.holeRecords.length,
+    scoreLine: `Final: +${top?.wpts ?? 0} Wolf pts · spread +${(top?.wpts ?? 0) - (bottom?.wpts ?? 0)}`,
   };
 }
 
@@ -510,7 +545,7 @@ function HomeScreen({
                   decoding="async"
                 />
               </div>
-              <p className="app-header__tagline">{"Tee Party's Scorekeeper"}</p>
+              <p className="app-header__tagline">The competitive golf receipt app.</p>
             </div>
             <button
               type="button"
@@ -543,6 +578,7 @@ function HomeScreen({
                   themeId={receiptThemeId}
                 />
               </div>
+              <p className="home-hero-lede card__lede">Pick your game. Play your round. Get the receipt.</p>
               <section className="home-league-invite" aria-label="League invite">
                 <div className="home-league-invite__card">
                   <p className="home-league-invite__copy">
@@ -589,7 +625,7 @@ function HomeScreen({
               ) : (
                 <ul className="home-rounds-list">
                   {completedRounds.map((round) => {
-                    const { winnerName, topPts, spread, holeCount } = roundSummaryForList(round);
+                    const { winnerName, scoreLine, holeCount } = roundSummaryForList(round);
                     const when = new Date(round.savedAt).toLocaleDateString(undefined, {
                       weekday: "short",
                       month: "short",
@@ -605,7 +641,7 @@ function HomeScreen({
                         <p className="home-round-card__winner">
                           Winner: <strong>{winnerName}</strong>
                         </p>
-                        <p className="home-round-card__score">Final: +{topPts} Wolf pts Â· spread +{spread}</p>
+                        <p className="home-round-card__score">{scoreLine}</p>
                         <button
                           type="button"
                           className="btn btn--outline btn--compact"
@@ -703,7 +739,9 @@ function HomeScreen({
                       <h2 className="home-lb-league__title">Austin Leaderboard</h2>
                       <p className="home-lb-league__subtitle">Top players in your city</p>
                     </header>
-                    <p className="home-lb-league__demo-note">Demo standings until live league data is connected.</p>
+                    <p className="home-lb-league__demo-note">
+                  Season standings coming soon. Receipts work across Stroke Play, Match Play, Skins, Nassau, and Wolf.
+                </p>
                     <ul className="home-lb-league-list">
                       {DEMO_CITY_LEADERBOARD_ROWS.map((row, i) => (
                         <li key={`city-${row.name}-${i}`} className={`home-lb-league-row${i === 0 ? " home-lb-league-row--top" : ""}`}>
@@ -722,9 +760,11 @@ function HomeScreen({
                   <>
                     <header className="home-lb-league__head">
                       <h2 className="home-lb-league__title">National Leaderboard</h2>
-                      <p className="home-lb-league__subtitle">Top Tee Party players nationwide</p>
+                      <p className="home-lb-league__subtitle">Top players nationwide (demo)</p>
                     </header>
-                    <p className="home-lb-league__demo-note">Demo standings until live league data is connected.</p>
+                    <p className="home-lb-league__demo-note">
+                  Season standings coming soon. Receipts work across Stroke Play, Match Play, Skins, Nassau, and Wolf.
+                </p>
                     <ul className="home-lb-league-list">
                       {DEMO_NATIONAL_LEADERBOARD_ROWS.map((row, i) => (
                         <li key={`nat-${row.name}-${i}`} className={`home-lb-league-row${i === 0 ? " home-lb-league-row--top" : ""}`}>
@@ -741,7 +781,7 @@ function HomeScreen({
                   </>
                 )}
 
-                <p className="home-lb-league__footnote">Live league standings connect after account + season tracking.</p>
+                <p className="home-lb-league__footnote">Season standings coming soon.</p>
               </div>
             </main>
           )}
@@ -908,6 +948,7 @@ function StartRoundScreen({
   portraitByPlayerId,
   resolveDisplayName,
   avatarStatus,
+  roundFormatId,
 }) {
   const courseAckTimerRef = useRef(null);
   const [coursePickAck, setCoursePickAck] = useState(false);
@@ -964,6 +1005,8 @@ function StartRoundScreen({
       courseAckTimerRef.current = null;
     }, 720);
   };
+
+  const formatMeta = GAME_FORMATS[normalizeRoundFormat(roundFormatId)];
 
   return (
     <div className="start-round">
@@ -1099,10 +1142,8 @@ function StartRoundScreen({
 
         <section className="card start-round__format">
           <h2 className="card__title card__title--sm">Game Format</h2>
-          <p className="start-round__format-name">Wolf (Season One)</p>
-          <p className="start-round__format-hint">
-            4 players. Normal Wolf, Lone Wolf, or declare Blind Wolf before tee shots.
-          </p>
+          <p className="start-round__format-name">{formatMeta.label}</p>
+          <p className="start-round__format-hint">{formatMeta.description}</p>
         </section>
       </div>
 
@@ -1116,11 +1157,12 @@ function StartRoundScreen({
   );
 }
 
-function StakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound }) {
+function StakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound, roundFormatId }) {
   const baseStake = stakesConfig.preset === "custom"
     ? Number.parseFloat(stakesConfig.customValue || "") || 2
     : stakesConfig.preset;
   const toggle = (key) => setStakesConfig((prev) => ({ ...prev, [key]: !prev[key] }));
+  const isWolf = normalizeRoundFormat(roundFormatId) === "wolf";
   return (
     <div className="start-round">
       <header className="start-round__header">
@@ -1179,14 +1221,20 @@ function StakesSetupScreen({ onBack, stakesConfig, setStakesConfig, onStartRound
 
         <section className="start-round__section card">
           <h2 className="card__title card__title--sm">Payout rules</h2>
-          <button type="button" className="stakes-setup__toggle" onClick={() => toggle("loneWolf2x")} aria-pressed={stakesConfig.loneWolf2x}>
-            <span>Lone Wolf = 2x multiplier</span>
-            <strong>{stakesConfig.loneWolf2x ? "ON" : "OFF"}</strong>
-          </button>
-          <button type="button" className="stakes-setup__toggle" onClick={() => toggle("blindWolf3x")} aria-pressed={stakesConfig.blindWolf3x}>
-            <span>Blind Wolf = 3x multiplier</span>
-            <strong>{stakesConfig.blindWolf3x ? "ON" : "OFF"}</strong>
-          </button>
+          {isWolf ? (
+            <>
+              <button type="button" className="stakes-setup__toggle" onClick={() => toggle("loneWolf2x")} aria-pressed={stakesConfig.loneWolf2x}>
+                <span>Lone Wolf = 2x multiplier</span>
+                <strong>{stakesConfig.loneWolf2x ? "ON" : "OFF"}</strong>
+              </button>
+              <button type="button" className="stakes-setup__toggle" onClick={() => toggle("blindWolf3x")} aria-pressed={stakesConfig.blindWolf3x}>
+                <span>Blind Wolf = 3x multiplier</span>
+                <strong>{stakesConfig.blindWolf3x ? "ON" : "OFF"}</strong>
+              </button>
+            </>
+          ) : (
+            <p className="card__lede">Wolf-only stake multipliers stay off until you run Wolf. Base stake still sets the vibe for the receipt.</p>
+          )}
           <button type="button" className="stakes-setup__toggle" onClick={() => toggle("hideDollarAmounts")} aria-pressed={stakesConfig.hideDollarAmounts}>
             <span>Hide dollar amounts on receipt</span>
             <strong>{stakesConfig.hideDollarAmounts ? "ON" : "OFF"}</strong>
@@ -1211,6 +1259,8 @@ function TheCardApp() {
   const [selectedTee, setSelectedTee] = useState("White");
   const [startVariant, setStartVariant] = useState("standard");
   const [stakesConfig, setStakesConfig] = useState(() => loadStakesConfig());
+  /** @type {import('./game/gameFormats.js').RoundFormatId} */
+  const [roundFormat, setRoundFormat] = useState("stroke");
   const [currentHole, setCurrentHole] = useState(1);
   const [receiptPortrait, setReceiptPortrait] = useState(null);
   /** Which cached portrait variant the receipt hero uses (from last round or persisted snapshot). */
@@ -1239,7 +1289,7 @@ function TheCardApp() {
   const [roundRecap, setRoundRecap] = useState(null);
   /** Snapshot for recap coded receipts (player-specific PNG gen); persists per recap session independent of clearing `gamePlayers` after Done */
   const [recapReceiptContext, setRecapReceiptContext] = useState(
-    /** @type {null | { gamePlayers: import('./game/types.js').GamePlayer[], holeRecords: import('./game/types.js').HoleRecord[], stakesConfig: import('./game/stakes.js').StakesConfig, portraitByPlayerId: Record<string, import('./portrait/types.js').PortraitBundle | null | undefined> }} */ (
+    /** @type {null | { gamePlayers: import('./game/types.js').GamePlayer[], holeRecords: import('./game/types.js').HoleRecord[], stakesConfig: import('./game/stakes.js').StakesConfig, portraitByPlayerId: Record<string, import('./portrait/types.js').PortraitBundle | null | undefined>, roundFormat: import('./game/gameFormats.js').RoundFormatId }} */ (
       null
     ),
   );
@@ -1353,8 +1403,8 @@ function TheCardApp() {
 
   const roundResult = useMemo(() => {
     if (gamePlayers.length !== 4) return null;
-    return buildRoundResult(gamePlayers, holeRecords);
-  }, [gamePlayers, holeRecords]);
+    return buildRoundResult(gamePlayers, holeRecords, { roundFormat: normalizeRoundFormat(roundFormat) });
+  }, [gamePlayers, holeRecords, roundFormat]);
 
   const getRoundShareSnapshot = useCallback(() => {
     if (!roundShareId || gamePlayers.length !== 4) return null;
@@ -1368,6 +1418,7 @@ function TheCardApp() {
       roundStatus,
       wolfOrder,
       selectedWolfOverride,
+      roundFormat,
     });
   }, [
     roundShareId,
@@ -1379,6 +1430,7 @@ function TheCardApp() {
     roundStatus,
     wolfOrder,
     selectedWolfOverride,
+    roundFormat,
   ]);
 
   useEffect(() => {
@@ -1461,7 +1513,7 @@ function TheCardApp() {
     setShowNearbyCourses(false);
     setSelectedTee("White");
     setStartVariant("standard");
-    setScreen("startRound");
+    setScreen("pickGameFormat");
   };
 
   const goStakesSetup = useCallback(() => {
@@ -1479,12 +1531,13 @@ function TheCardApp() {
       }
       setPlayers(seeded);
     }
+    setRoundFormat(last?.roundFormat != null ? normalizeRoundFormat(last.roundFormat) : "stroke");
     setCourseName("Casual Round");
     setShowNearbyCourses(false);
     setSelectedTee("White");
     setStakesConfig(loadStakesConfig());
     setStartVariant("runback");
-    setScreen("startRound");
+    setScreen("pickGameFormat");
   }, []);
 
   const goNewGroup = useCallback(() => {
@@ -1494,7 +1547,7 @@ function TheCardApp() {
     setSelectedTee("White");
     setStakesConfig(loadStakesConfig());
     setStartVariant("new-group");
-    setScreen("startRound");
+    setScreen("pickGameFormat");
   }, []);
 
   const clearFirstReceiptPath = useCallback(() => {
@@ -1515,7 +1568,7 @@ function TheCardApp() {
     setCourseName("Casual Round");
     setShowNearbyCourses(false);
     setSelectedTee("White");
-    setScreen("startRound");
+    setScreen("pickGameFormat");
   }, [clearFirstReceiptPath]);
 
   // Sync in-app `screen` when deep-linked to /first-receipt or /receipt-kit (static hosting has no real router).
@@ -1582,7 +1635,7 @@ function TheCardApp() {
     setShowNearbyCourses(false);
     setSelectedTee("White");
     setStartVariant("new-group");
-    setScreen("startRound");
+    setScreen("pickGameFormat");
     window.history.replaceState(null, "", "/");
     window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
   }, []);
@@ -1648,6 +1701,7 @@ function TheCardApp() {
           [demoPlayers[3].id]: null,
         },
         receiptNumber: "RECEIPT #DEMO-0001",
+        roundFormat: "wolf",
       });
       setGamePlayers(demoPlayers);
       setHoleRecords(holeRecords);
@@ -1657,10 +1711,11 @@ function TheCardApp() {
         holeRecords,
         stakesConfig: demoStakesConfig,
         portraitByPlayerId,
+        roundFormat: "wolf",
       });
       setRecapSessionKey((x) => x + 1);
-      setRoundRecap(buildRecapShareCards(holeRecords, demoPlayers, portraitByPlayerId, demoStakesConfig));
-      const snap = buildLastReceiptSnapshot(demoPlayers, holeRecords, demoStakesConfig);
+      setRoundRecap(buildRecapShareCards(holeRecords, demoPlayers, portraitByPlayerId, demoStakesConfig, "wolf"));
+      const snap = buildLastReceiptSnapshot(demoPlayers, holeRecords, demoStakesConfig, "wolf");
       saveLastReceiptSnapshot(snap);
       markReturningUserReceipt();
       setLastReceiptSnapshot(snap);
@@ -1684,18 +1739,81 @@ function TheCardApp() {
     setReceiptPortraitDisplayMode(null);
     const seededPlayers = buildGamePlayersFromSlots(players);
     setGamePlayers(seededPlayers);
-    setHoleRecords([]);
-    const ids = seededPlayers.map((p) => p.id);
-    const firstWolf = ids[Math.floor(Math.random() * ids.length)] ?? "p-0";
-    setWolfOrder(buildWolfOrderAfterFirstPick(firstWolf, ids));
     setSelectedWolfOverride(null);
     lowWolfPickCommittedHoleRef.current = -1;
     setCurrentHole(1);
     setRoundStatus("playing");
     setRoundShareId(newRoundShareId());
     saveStakesConfig(stakesConfig);
-    setScreen("wolfRound");
+    const fmt = normalizeRoundFormat(roundFormat);
+    if (fmt === "wolf") {
+      setHoleRecords([]);
+      const ids = seededPlayers.map((p) => p.id);
+      const firstWolf = ids[Math.floor(Math.random() * ids.length)] ?? "p-0";
+      setWolfOrder(buildWolfOrderAfterFirstPick(firstWolf, ids));
+      setScreen("wolfRound");
+      return;
+    }
+    if (fmt === "stroke") {
+      setWolfOrder(null);
+      setHoleRecords([]);
+      setScreen("strokePlayRound");
+      return;
+    }
+    setWolfOrder(null);
+    setHoleRecords([]);
+    setScreen("formatPlaceholderRound");
   };
+
+  const handleStrokeRoundComplete = useCallback(
+    (records) => {
+      setHoleRecords(records);
+      setRoundStatus("complete");
+      const fmt = normalizeRoundFormat("stroke");
+      setRecapReceiptContext({
+        gamePlayers,
+        holeRecords: records,
+        stakesConfig,
+        portraitByPlayerId,
+        roundFormat: fmt,
+      });
+      setRecapSessionKey((x) => x + 1);
+      setRoundRecap(buildRecapShareCards(records, gamePlayers, portraitByPlayerId, stakesConfig, fmt));
+      setScreen("recap");
+    },
+    [gamePlayers, stakesConfig, portraitByPlayerId],
+  );
+
+  const handlePlaceholderExit = useCallback(() => {
+    setReceiptPortraitDisplayMode(null);
+    setHoleRecords([]);
+    setWolfOrder(null);
+    setSelectedWolfOverride(null);
+    lowWolfPickCommittedHoleRef.current = -1;
+    setCurrentHole(1);
+    setGamePlayers([]);
+    setRoundStatus("idle");
+    setRoundShareId(null);
+    setActiveTab("home");
+    setScreen("home");
+  }, []);
+
+  const handlePlaceholderFinishToReceipt = useCallback(() => {
+    const records = buildFormatPlaceholderHoleRecords(gamePlayers);
+    const fmt = normalizeRoundFormat(roundFormat);
+    setHoleRecords(records);
+    setRoundStatus("complete");
+    setRecapReceiptContext({
+      gamePlayers,
+      holeRecords: records,
+      stakesConfig,
+      portraitByPlayerId,
+      roundFormat: fmt,
+    });
+    setRecapSessionKey((x) => x + 1);
+    setRoundRecap(buildRecapShareCards(records, gamePlayers, portraitByPlayerId, stakesConfig, fmt));
+    setScreen("recap");
+  }, [gamePlayers, stakesConfig, portraitByPlayerId, roundFormat]);
 
   const handleHoleComplete = useCallback(
     (record) => {
@@ -1711,12 +1829,13 @@ function TheCardApp() {
         holeRecords: merged,
         stakesConfig,
         portraitByPlayerId,
+        roundFormat: normalizeRoundFormat(roundFormat),
       });
       setRecapSessionKey((x) => x + 1);
-      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId, stakesConfig));
+      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId, stakesConfig, normalizeRoundFormat(roundFormat)));
       setScreen("recap");
     },
-    [holeRecords, gamePlayers, portraitByPlayerId, stakesConfig],
+    [holeRecords, gamePlayers, portraitByPlayerId, stakesConfig, roundFormat],
   );
 
   const openRecapFromHistory = useCallback(
@@ -1726,19 +1845,21 @@ function TheCardApp() {
         holeRecords: round.holeRecords,
         stakesConfig,
         portraitByPlayerId,
+        roundFormat: normalizeRoundFormat(round.roundFormat),
       });
       setRecapSessionKey((x) => x + 1);
-      setRoundRecap(buildRecapShareCards(round.holeRecords, round.players, portraitByPlayerId, stakesConfig));
+      setRoundRecap(buildRecapShareCards(round.holeRecords, round.players, portraitByPlayerId, stakesConfig, normalizeRoundFormat(round.roundFormat)));
       setScreen("recap");
     },
     [portraitByPlayerId, stakesConfig],
   );
 
   const handleRecapComplete = () => {
+    const formatForPersist = normalizeRoundFormat(recapReceiptContext?.roundFormat ?? roundFormat);
     if (gamePlayers.length === 4 && holeRecords.length > 0) {
-      appendCompletedRound(gamePlayers, holeRecords);
+      appendCompletedRound(gamePlayers, holeRecords, formatForPersist);
       setCompletedRounds(loadCompletedRounds());
-      const snap = buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig);
+      const snap = buildLastReceiptSnapshot(gamePlayers, holeRecords, stakesConfig, formatForPersist);
       setReceiptPortraitDisplayMode(snap.portraitHeroMode);
       saveLastReceiptSnapshot(snap);
       markReturningUserReceipt();
@@ -1760,6 +1881,7 @@ function TheCardApp() {
         holeRecords,
         stakesConfig,
         portraitByPlayerId,
+        roundFormat: formatForPersist,
       })
         .then((rendered) => {
           setRenderedReceiptImageUrl(rendered.receiptImageUrl);
@@ -1818,9 +1940,10 @@ function TheCardApp() {
         holeRecords: merged,
         stakesConfig,
         portraitByPlayerId,
+        roundFormat: normalizeRoundFormat(roundFormat),
       });
       setRecapSessionKey((x) => x + 1);
-      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId, stakesConfig));
+      setRoundRecap(buildRecapShareCards(merged, gamePlayers, portraitByPlayerId, stakesConfig, normalizeRoundFormat(roundFormat)));
       setScreen("recap");
     } else {
       setReceiptPortraitDisplayMode(null);
@@ -1853,7 +1976,7 @@ function TheCardApp() {
           {screen === "home" && (
             <HomeScreen
               activeTab={activeTab}
-              onTabChange={setActiveTab}
+              onTabChange={handlePrimaryTabChange}
               completedRounds={completedRounds}
               onViewRoundRecap={openRecapFromHistory}
               onNewRound={goStartRound}
@@ -1867,7 +1990,6 @@ function TheCardApp() {
               lastReceiptSnapshot={lastReceiptSnapshot}
               receiptThemeId={receiptThemeId}
               renderedReceiptImageUrl={renderedReceiptImageUrl}
-              onTabChange={handlePrimaryTabChange}
             />
           )}
           {screen === "settings" && (
@@ -1907,9 +2029,23 @@ function TheCardApp() {
               playerId="p-0"
             />
           )}
+          {screen === "pickGameFormat" && (
+            <PickGameFormatScreen
+              onBack={() => {
+                window.history.pushState(null, "", "/");
+                window.dispatchEvent(new Event(APP_PATHNAME_CHANGED));
+                setScreen("home");
+                setActiveTab("home");
+              }}
+              onSelectFormat={(id) => {
+                setRoundFormat(normalizeRoundFormat(id));
+                setScreen("startRound");
+              }}
+            />
+          )}
           {screen === "startRound" && (
             <StartRoundScreen
-              onBack={goHome}
+              onBack={() => setScreen("pickGameFormat")}
               onPortraitSetup={goPortraitSetup}
               players={players}
               setPlayers={setPlayers}
@@ -1924,6 +2060,7 @@ function TheCardApp() {
               portraitByPlayerId={portraitByPlayerId}
               resolveDisplayName={displayPlayerName}
               avatarStatus={avatarStatus}
+              roundFormatId={roundFormat}
             />
           )}
           {screen === "stakesSetup" && (
@@ -1932,6 +2069,7 @@ function TheCardApp() {
               stakesConfig={stakesConfig}
               setStakesConfig={setStakesConfig}
               onStartRound={handleStartGame}
+              roundFormatId={roundFormat}
             />
           )}
           {screen === "recap" && roundRecap && (
@@ -1940,11 +2078,12 @@ function TheCardApp() {
               recapSessionKey={recapSessionKey}
               receiptContext={recapReceiptContext}
               roundId={roundShareId}
+              formatId={normalizeRoundFormat(recapReceiptContext?.roundFormat ?? roundFormat)}
               onDone={handleRecapComplete}
               themeId={receiptThemeId}
             />
           )}
-          {screen === "wolfRound" && gamePlayers.length === 4 && (
+          {screen === "wolfRound" && normalizeRoundFormat(roundFormat) === "wolf" && gamePlayers.length === 4 && (
             <WolfRoundScreen
               gamePlayers={gamePlayers}
               currentHole={currentHole}
@@ -1959,6 +2098,22 @@ function TheCardApp() {
               roundElo={roundElo}
               roundResult={roundResult}
               onShareRound={() => setRoundShareModalOpen(true)}
+            />
+          )}
+          {screen === "strokePlayRound" && gamePlayers.length === 4 && (
+            <StrokePlayRoundScreen
+              gamePlayers={gamePlayers}
+              onComplete={handleStrokeRoundComplete}
+              onExit={handlePlaceholderExit}
+              draftPersistKey={roundShareId}
+            />
+          )}
+          {screen === "formatPlaceholderRound" && gamePlayers.length === 4 && (
+            <PlaceholderFormatRoundScreen
+              gamePlayers={gamePlayers}
+              roundFormat={normalizeRoundFormat(roundFormat)}
+              onFinishToReceipt={handlePlaceholderFinishToReceipt}
+              onExit={handlePlaceholderExit}
             />
           )}
         </div>

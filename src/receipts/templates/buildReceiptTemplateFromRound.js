@@ -8,6 +8,7 @@ import { aggregateWolfRoundStats, computePointsAwarded, winningPlayerIdsForRecor
 import { computeRoundPayout } from "../../game/stakes.js";
 import { DEFAULT_DOWN_BAD_TEMPLATE } from "./downBadReceiptLayoutSpec.js";
 import { DEFAULT_WIN_TEMPLATE } from "./winReceiptLayoutSpec.js";
+import { formatReceiptLine, GAME_FORMATS, normalizeRoundFormat, pickReceiptExampleHeadline } from "../../game/gameFormats.js";
 
 /**
  * @typedef {import('../../game/types.js').GamePlayer} GamePlayer
@@ -34,6 +35,7 @@ import { DEFAULT_WIN_TEMPLATE } from "./winReceiptLayoutSpec.js";
  *   receiptByPlayerId?: Record<string, ReceiptLineOverride>
  *   scoreVsParByPlayerId?: Record<string, string>
  *   receiptNumberByPlayerId?: Record<string, string>
+ *   roundFormat?: import('../../game/gameFormats.js').RoundFormatId
  * }} RoundForReceipt
  */
 
@@ -118,6 +120,7 @@ function normalizeRound(round) {
     receiptByPlayerId: r?.receiptByPlayerId && typeof r.receiptByPlayerId === "object" ? r.receiptByPlayerId : undefined,
     scoreVsParByPlayerId: r?.scoreVsParByPlayerId && typeof r.scoreVsParByPlayerId === "object" ? r.scoreVsParByPlayerId : undefined,
     receiptNumberByPlayerId: r?.receiptNumberByPlayerId && typeof r.receiptNumberByPlayerId === "object" ? r.receiptNumberByPlayerId : undefined,
+    roundFormat: r?.roundFormat,
   };
 }
 
@@ -138,6 +141,24 @@ function resolvePlayer(round, player) {
 function displayNameUpper(name) {
   const s = String(name ?? "").trim();
   return (s || "PLAYER").toUpperCase();
+}
+
+/**
+ * @param {Record<string, string>} voice
+ * @param {import('../../game/gameFormats.js').RoundFormatId} fmt
+ * @param {string} playerId
+ */
+function mergeVoiceWithFormat(voice, fmt, playerId) {
+  if (fmt === "wolf") return voice;
+  const example = pickReceiptExampleHeadline(fmt, playerId);
+  const words = example.toUpperCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const mid = Math.max(1, Math.ceil(words.length / 2));
+  return {
+    ...voice,
+    headlineTop: words.slice(0, mid).join(" "),
+    headlineBottom: words.slice(mid).join(" ") || "POSTED",
+    subheadline: GAME_FORMATS[fmt].description.toUpperCase(),
+  };
 }
 
 /**
@@ -346,18 +367,20 @@ export function buildReceiptTemplateFromRound(round, player, receiptType) {
   const kind = receiptType === "win" ? "win" : "loss";
   const core = resolveReceiptCore(R, p.id);
   const moneyStr = formatMoney(core.moneyRaw, core.hideDollar);
+  const fmt = normalizeRoundFormat(R.roundFormat);
+  const formatTop = formatReceiptLine(fmt);
   const qrUrl =
     (typeof R.qrUrl === "string" && R.qrUrl.trim()) ||
     (typeof window !== "undefined" ? `${window.location.origin}/receipt-lab` : "https://thecard.local/receipt-lab");
 
   if (kind === "win") {
-    const voice = pickWinCopy(core);
+    const voice = mergeVoiceWithFormat(pickWinCopy(core), fmt, p.id);
     return {
       ...DEFAULT_WIN_TEMPLATE,
       ...voice,
       playerName: displayNameUpper(p.name),
       receiptNumber: core.receiptNumber,
-      topLabel: "ROUND HERO",
+      topLabel: formatTop,
       roleLabel: "ROUND HERO",
       money: moneyStr,
       scoreVsPar: core.scoreVsPar,
@@ -367,13 +390,13 @@ export function buildReceiptTemplateFromRound(round, player, receiptType) {
     };
   }
 
-  const voice = pickLossCopy(core);
+  const voice = mergeVoiceWithFormat(pickLossCopy(core), fmt, p.id);
   return {
     ...DEFAULT_DOWN_BAD_TEMPLATE,
     ...voice,
     playerName: displayNameUpper(p.name),
     receiptNumber: core.receiptNumber,
-    topLabel: "ROUND VILLAIN",
+    topLabel: formatTop,
     roleLabel: "ROUND VILLAIN",
     money: moneyStr,
     scoreVsPar: core.scoreVsPar,

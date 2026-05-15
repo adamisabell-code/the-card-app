@@ -17,6 +17,7 @@
  *   wolfOrder: string[] | null
  *   selectedWolfOverride: { hole: number, playerId: string } | null
  *   savedAt: number
+ *   roundFormat?: string
  * }} RoundSharePayloadV1
  */
 
@@ -37,6 +38,7 @@ export function buildRoundShareSnapshot(p) {
     wolfOrder: p.wolfOrder,
     selectedWolfOverride: p.selectedWolfOverride,
     savedAt: Date.now(),
+    roundFormat: p.roundFormat,
   };
 }
 
@@ -66,5 +68,6 @@ export function isValidRoundSharePayload(p) {
     if (typeof /** @type {{ hole: unknown, playerId: unknown }} */ (t).hole !== "number") return false;
     if (typeof /** @type {{ playerId: unknown }} */ (t).playerId !== "string") return false;
   }
+  if (o.roundFormat != null && typeof o.roundFormat !== "string") return false;
   return true;
 }

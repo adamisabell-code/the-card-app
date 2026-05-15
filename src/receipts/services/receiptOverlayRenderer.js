@@ -392,10 +392,11 @@ export function getReceiptTheme(receiptData) {
     },
   };
   const base = themeByType[type] ?? themeByType.neutral;
+  const formatLine = String(receiptData.formatReceiptLabel ?? "").trim();
   return {
     ...base,
     titleRibbon: base.ribbonBanner,
-    topLabel: base.archetypeLabel,
+    topLabel: formatLine ? formatLine.toUpperCase() : base.archetypeLabel,
     borderColor: `rgba(201,146,56,0.92)`,
     textureAlpha: Math.max(0.06, Math.min(0.12, base.textureAlpha + (rand() - 0.5) * 0.02)),
   };
@@ -1239,6 +1240,7 @@ export async function renderReceiptOverlay(params) {
     {
       receiptType: params.template.receiptType,
       playerName: params.template.playerName,
+      formatReceiptLabel: params.template.formatReceiptLabel,
       headline: params.template.headline,
       subheadline: params.template.subheadline,
       moneyResult: params.template.moneyLabel,
